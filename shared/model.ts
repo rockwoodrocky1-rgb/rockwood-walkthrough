@@ -1,4 +1,5 @@
 import { z } from "zod";
+import type { Language, Participant } from "./participant";
 
 export const LIMITS = {
   seconds: 300,
@@ -124,8 +125,11 @@ export type Report = ReportContent & {
   generatedAt: string;
   mode: "live" | "sample" | "manual";
   reviewStatus: "draft" | "reviewed";
+  outputLanguage?: "en";
 };
 export type Session = {
+  participant?: Participant;
+  language?: Language;
   id: string;
   projectId: string;
   startedAt: string;
@@ -150,6 +154,7 @@ export type Session = {
   };
 };
 export const reportInputSchema = z.object({
+  language: z.enum(["en", "es"]).default("en"),
   sessionId: id,
   projectId: z.enum(["coral-gables", "doral-office", "pinecrest"]),
   notes: z.string().max(8000),
@@ -165,7 +170,7 @@ export const reportInputSchema = z.object({
     )
     .max(LIMITS.photos),
 });
-export type ReportInput = z.infer<typeof reportInputSchema>;
+export type ReportInput = z.input<typeof reportInputSchema>;
 
 export function validateEvidence(
   report: ReportContent,

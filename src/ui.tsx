@@ -1,4 +1,5 @@
 "use client";
+import { LanguageToggle, useLanguage } from "./i18n";
 import { useEffect, useState, useRef, type ReactNode } from "react";
 import {
   X,
@@ -23,6 +24,7 @@ export function useBlobUrl(blob?: Blob) {
   return blob ? url : "";
 }
 export function Logo({ available = true }: { available?: boolean }) {
+  const { t } = useLanguage();
   return available ? (
     <img
       className="logo"
@@ -32,7 +34,9 @@ export function Logo({ available = true }: { available?: boolean }) {
       height="158"
     />
   ) : (
-    <div className="logo-missing">Required Rockwood logo asset is missing.</div>
+    <div className="logo-missing">
+      {t("Required Rockwood logo asset is missing.")}
+    </div>
   );
 }
 export function Header({
@@ -44,19 +48,21 @@ export function Header({
   home: () => void;
   storageLabel?: string;
 }) {
+  const { t } = useLanguage();
   return (
     <header className="app-header no-print">
       <button
         className="brand-button"
         onClick={home}
-        aria-label="Back to projects"
+        aria-label={t("Back to projects")}
       >
         <Logo available={logoAvailable} />
       </button>
       <div className="header-divider" />
-      <span className="app-descriptor">Walkthroughs</span>
+      <span className="app-descriptor">{t("Walkthroughs")}</span>
+      <LanguageToggle />
       <span className="device-note">
-        <HardDrive size={14} /> {storageLabel}
+        <HardDrive size={14} /> {t(storageLabel)}
       </span>
     </header>
   );
@@ -100,6 +106,7 @@ export function Modal({
   children: ReactNode;
   close: () => void;
 }) {
+  const { t } = useLanguage();
   const ref = useRef<HTMLDialogElement>(null);
   useEffect(() => {
     ref.current?.showModal();
@@ -119,7 +126,7 @@ export function Modal({
         <h2>{title}</h2>
         <button
           className="icon-button"
-          aria-label="Close dialog"
+          aria-label={t("Close dialog")}
           onClick={close}
         >
           <X />
@@ -136,23 +143,24 @@ export function PhotoImage({
   photo: Photo;
   onClick?: () => void;
 }) {
+  const { t } = useLanguage();
   const url = useBlobUrl(photo.blob);
   return onClick ? (
     <button
       className="photo-thumb"
       onClick={onClick}
-      aria-label={`Preview photo in ${photo.area}`}
+      aria-label={t("Preview photo in {area}", { area: t(photo.area) })}
     >
       <img
-        src={url}
-        alt={`${photo.area}, ${photo.elapsed === null ? "uploaded" : formatTime(photo.elapsed)}`}
+        src={url || undefined}
+        alt={`${t(photo.area)}, ${photo.elapsed === null ? t("Uploaded photo · timing unconfirmed") : formatTime(photo.elapsed)}`}
       />
     </button>
   ) : (
     <img
       className="evidence-photo"
-      src={url}
-      alt={`Walkthrough photo: ${photo.area}`}
+      src={url || undefined}
+      alt={t("Walkthrough photo: {area}", { area: t(photo.area) })}
     />
   );
 }
@@ -163,6 +171,7 @@ export function PhotoStrip({
   photos: Photo[];
   onSelect: (id: string) => void;
 }) {
+  const { t } = useLanguage();
   return (
     <div className="photo-strip">
       {photos.length ? (
@@ -172,7 +181,7 @@ export function PhotoStrip({
       ) : (
         <div className="photo-empty">
           <ImagePlus size={21} />
-          <span>Your site photos will appear here.</span>
+          <span>{t("Your site photos will appear here.")}</span>
         </div>
       )}
     </div>
@@ -191,35 +200,38 @@ export function PhotoDialog({
   remove: () => void;
   close: () => void;
 }) {
+  const { t, locale } = useLanguage();
   const [draft, setDraft] = useState(photo);
   return (
-    <Modal title="Photo details" close={close}>
+    <Modal title={t("Photo details")} close={close}>
       <PhotoImage photo={draft} />
       <p className="muted small">
-        {new Date(draft.capturedAt).toLocaleString()} ·{" "}
+        {new Date(draft.capturedAt).toLocaleString(locale)} ·{" "}
         {draft.elapsed === null
-          ? "Uploaded photo · timing unconfirmed"
-          : `${formatTime(draft.elapsed)} into recording`}
+          ? t("Uploaded photo · timing unconfirmed")
+          : t("{time} into recording", { time: formatTime(draft.elapsed) })}
       </p>
       <label>
-        Area
+        {t("Area")}
         <select
           value={draft.area}
           onChange={(e) => setDraft({ ...draft, area: e.target.value })}
         >
-          <option>{GENERAL}</option>
+          <option value={GENERAL}>{t(GENERAL)}</option>
           {project.areas.map((a) => (
-            <option key={a}>{a}</option>
+            <option key={a} value={a}>
+              {t(a)}
+            </option>
           ))}
         </select>
       </label>
       <label>
-        Optional note
+        {t("Optional note")}
         <textarea
           value={draft.note}
           maxLength={4000}
           rows={3}
-          placeholder="What should this photo help document?"
+          placeholder={t("What should this photo help document?")}
           onChange={(e) => setDraft({ ...draft, note: e.target.value })}
         />
       </label>
@@ -231,14 +243,14 @@ export function PhotoDialog({
             close();
           }}
         >
-          Save photo details
+          {t("Save photo details")}
         </button>
         <button
           className="button"
           onClick={() => downloadBlob(draft.blob, `photo-${draft.id}.jpg`)}
         >
           <Download size={16} />
-          Download
+          {t("Download")}
         </button>
         <button
           className="text-button danger"
@@ -248,7 +260,7 @@ export function PhotoDialog({
           }}
         >
           <Trash2 size={16} />
-          Remove photo
+          {t("Remove photo")}
         </button>
       </div>
     </Modal>

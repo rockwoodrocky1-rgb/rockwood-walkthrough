@@ -4,9 +4,9 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "dev": "next dev --hostname 127.0.0.1 --port 8790",
+    "dev": "next dev --hostname 127.0.0.1 --port 8791",
     "build": "next build",
-    "start": "next start --hostname 127.0.0.1 --port 8790",
+    "start": "next start --hostname 127.0.0.1 --port 8791",
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
     "test:e2e": "playwright test",
@@ -26,6 +26,7 @@
     "zod": "^4.1.12"
   },
   "devDependencies": {
+    "@electric-sql/pglite": "^0.5.9",
     "@playwright/test": "^1.56.0",
     "@tailwindcss/postcss": "^4.1.0",
     "@types/node": "^22.18.0",

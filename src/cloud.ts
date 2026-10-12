@@ -1,6 +1,11 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { z } from "zod";
 import {
+  participantSchema,
+  languageSchema,
+  type Participant,
+} from "../shared/participant";
+import {
   photoMetaSchema,
   transcriptSchema,
   reportContentSchema,
@@ -14,7 +19,8 @@ export type WorkspaceAccess = {
   workspaceName: string;
   userId: string;
   email: string;
-  role: "owner" | "editor" | "viewer";
+  role: "owner" | "editor" | "viewer" | "contributor";
+  participant?: Participant;
   projects: Project[];
   signOut: () => Promise<void>;
 };
@@ -24,6 +30,8 @@ const fileSchema = z.object({
   size: z.number().nonnegative(),
 });
 const payloadSchema = z.object({
+  participant: participantSchema.optional(),
+  language: languageSchema.optional(),
   duration: z.number().nonnegative(),
   status: z.enum(["saved", "interrupted"]),
   notes: z.string().max(8000),
@@ -39,6 +47,7 @@ const payloadSchema = z.object({
       generatedAt: z.string(),
       mode: z.enum(["live", "manual", "sample"]),
       reviewStatus: z.enum(["draft", "reviewed"]),
+      outputLanguage: z.literal("en").optional(),
     })
     .optional(),
   audio: fileSchema.optional(),
@@ -107,7 +116,7 @@ export function mergeSessions(local: Session[], remote: Session[]): Session[] {
 export function canEditSession(access: WorkspaceAccess, session: Session) {
   return (
     access.role === "owner" ||
-    (access.role === "editor" &&
+    (["editor", "contributor"].includes(access.role) &&
       (!session.cloud?.createdBy || session.cloud.createdBy === access.userId))
   );
 }
@@ -217,6 +226,8 @@ export async function saveCloudSession(
     ? await uploadBlob(access, session.id, session.audio)
     : undefined;
   const payload = payloadSchema.parse({
+    participant: session.participant,
+    language: session.language,
     duration: session.duration,
     status: session.status,
     notes: session.notes,

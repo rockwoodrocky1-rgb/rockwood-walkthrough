@@ -1,4 +1,6 @@
 "use client";
+import { useLanguage } from "./i18n";
+import { translateReport } from "./api";
 import { createId } from "./id";
 import { useEffect, useState } from "react";
 import {
@@ -51,12 +53,13 @@ function Editable({
   edit: boolean;
   multiline?: boolean;
 }) {
+  const { t } = useLanguage();
   return edit ? (
     <label className="editable-label">
-      {label}
+      {t(label)}
       {multiline ? (
         <textarea
-          aria-label={label}
+          aria-label={t(label)}
           value={value}
           rows={Math.max(2, Math.min(6, Math.ceil(value.length / 85)))}
           onChange={(e) => onChange(e.target.value)}
@@ -64,7 +67,7 @@ function Editable({
         />
       ) : (
         <input
-          aria-label={label}
+          aria-label={t(label)}
           value={value}
           onChange={(e) => onChange(e.target.value)}
           maxLength={300}
@@ -96,6 +99,7 @@ export default function ReportEditor({
   readOnly?: boolean;
   cloud?: WorkspaceAccess;
 }) {
+  const { t, language, locale } = useLanguage();
   const [report, setReport] = useState<Report>(initial.report!);
   const [editing, setEditing] = useState(false);
   const [dirty, setDirty] = useState(false);
@@ -111,6 +115,7 @@ export default function ReportEditor({
     return () => window.removeEventListener("beforeunload", warn);
   }, [dirty]);
   function change(patch: Partial<Report>) {
+    if (readOnly) return;
     setReport((r) => ({ ...r, ...patch, reviewStatus: "draft" }));
     setDirty(true);
     setMessage("");
@@ -147,10 +152,17 @@ export default function ReportEditor({
     });
   }
   async function persist(reviewed = false) {
+    if (readOnly) return;
     setSaving(true);
     try {
+      const english =
+        language === "es" || initial.language === "es"
+          ? await translateReport(report)
+          : report;
       const next = {
         ...report,
+        ...english,
+        outputLanguage: "en" as const,
         reviewStatus: reviewed ? ("reviewed" as const) : report.reviewStatus,
       };
       await save({ ...initial, report: next });
@@ -172,7 +184,7 @@ export default function ReportEditor({
     }
   }
   function leave(action: () => void) {
-    if (!dirty || window.confirm("Leave without saving your report edits?"))
+    if (!dirty || window.confirm(t("Leave without saving your report edits?")))
       action();
   }
   function addAction(category: ActionItem["category"]) {
@@ -235,18 +247,20 @@ export default function ReportEditor({
             >
               <Link2 size={13} />
               {item.photoIds.length > 0
-                ? `${item.photoIds.length} photo${item.photoIds.length === 1 ? "" : "s"} · `
+                ? t("{count} photo(s) · ", { count: item.photoIds.length })
                 : ""}
               {item.transcriptSegmentIds.length
-                ? `${item.transcriptSegmentIds.length} transcript source${item.transcriptSegmentIds.length === 1 ? "" : "s"}`
+                ? t("{count} transcript source(s)", {
+                    count: item.transcriptSegmentIds.length,
+                  })
                 : item.noteIds.length
-                  ? "User notes"
-                  : "Photo evidence"}
+                  ? t("User notes")
+                  : t("Photo evidence")}
               <ChevronDown size={13} />
             </button>
           ) : (
             <span className="muted small">
-              No evidence linked · verify before sharing
+              {t("No evidence linked · verify before sharing")}
             </span>
           )}
           {isOpen && (
@@ -258,7 +272,7 @@ export default function ReportEditor({
                     <blockquote key={id}>
                       <span>
                         {s.start === null
-                          ? "Timing unconfirmed"
+                          ? t("Timing unconfirmed")
                           : formatTime(s.start)}
                       </span>
                       {s.text}
@@ -268,7 +282,7 @@ export default function ReportEditor({
               })}
               {item.noteIds.map((id) => (
                 <p key={id}>
-                  <b>User note: </b>
+                  <b>{t("User note:")}</b>
                   {id === "session-note"
                     ? initial.notes
                     : initial.photos.find((p) => p.id === id)?.note}
@@ -283,7 +297,7 @@ export default function ReportEditor({
         </div>
         {printSources.length > 0 && (
           <p className="print-only evidence-print">
-            Evidence: {printSources.join(" · ")}
+            {t("Evidence:")} {printSources.join(" · ")}
           </p>
         )}
       </>
@@ -297,7 +311,9 @@ export default function ReportEditor({
       editing &&
       initial.photos.length > 0 && (
         <fieldset className="photo-picker no-print">
-          <legend>Associated photos · confirm content, not just timing</legend>
+          <legend>
+            {t("Associated photos · confirm content, not just timing")}
+          </legend>
           {initial.photos.map((p, i) => (
             <label key={p.id}>
               <input
@@ -319,7 +335,7 @@ export default function ReportEditor({
                     });
                 }}
               />
-              Photo {i + 1} · {p.area}
+              {t("Photo")} {i + 1} · {p.area}
             </label>
           ))}
         </fieldset>
@@ -329,7 +345,7 @@ export default function ReportEditor({
   return (
     <main className="report-page">
       <div className="report-topbar no-print">
-        <Back onClick={() => leave(back)}>Back to project</Back>
+        <Back onClick={() => leave(back)}>{t("Back to project")}</Back>
         <div className="button-row">
           <button
             className="button"
@@ -337,7 +353,7 @@ export default function ReportEditor({
             onClick={() => setEditing(!editing)}
           >
             <Pencil size={16} />
-            {editing ? "Preview report" : "Edit report"}
+            {editing ? t("Preview report") : t("Edit report")}
           </button>
           <button
             className="button primary"
@@ -345,13 +361,29 @@ export default function ReportEditor({
             disabled={saving || readOnly}
           >
             <Save size={16} />
-            {saving ? "Saving…" : "Save report"}
+            {saving ? t("Saving…") : t("Save report")}
           </button>
         </div>
       </div>
       {message && (
         <div className="no-print">
-          <Notice>{message}</Notice>
+          <Notice>{t(message)}</Notice>
+        </div>
+      )}
+      <div className="global-notice no-print">
+        <Notice>
+          <strong>{t("English report")}</strong>
+          <p>
+            {t(
+              "Your original notes and audio stay in their original language. Saved reports and emails are in English.",
+            )}
+          </p>
+        </Notice>
+      </div>
+      {initial.participant && (
+        <div className="participant-summary">
+          <strong>{t("Submitted by")}</strong> {initial.participant.name} ·{" "}
+          {initial.participant.phone}
         </div>
       )}
       {cloud && initial.report?.mode !== "sample" && (
@@ -361,7 +393,7 @@ export default function ReportEditor({
         <header className="report-header">
           <Logo available={logoAvailable} />
           <div className="report-identity">
-            <span className="eyebrow">FIELD DOCUMENTATION</span>
+            <span className="eyebrow">{t("FIELD DOCUMENTATION")}</span>
             <span>
               RW / {project.number} /{" "}
               {new Date(initial.startedAt).getFullYear()}
@@ -371,30 +403,31 @@ export default function ReportEditor({
         <div className="report-title">
           <p className="eyebrow">
             {report.mode === "sample"
-              ? "FICTIONAL SAMPLE · NOT BASED ON A RECORDING"
+              ? t("FICTIONAL SAMPLE · NOT BASED ON A RECORDING")
               : report.mode === "manual"
-                ? "MANUALLY PREPARED REPORT"
-                : "SITE VISIT RECORD"}
+                ? t("MANUALLY PREPARED REPORT")
+                : t("SITE VISIT RECORD")}
           </p>
           <h1>
-            Site Walkthrough
-            <br className="desktop-break" /> Report
+            {t("Site Walkthrough")}
+            <br className="desktop-break" />
+            {t("Report")}
           </h1>
           <p className="report-project">{project.name}</p>
-          <span className="sample-label">Fictional sample project</span>
+          <span className="sample-label">{t("Fictional sample project")}</span>
         </div>
         <div className="report-meta">
           <div>
-            <span>VISIT DATE</span>
+            <span>{t("VISIT DATE")}</span>
             <strong>
-              {new Date(initial.startedAt).toLocaleDateString(undefined, {
+              {new Date(initial.startedAt).toLocaleDateString(locale, {
                 month: "long",
                 day: "numeric",
                 year: "numeric",
               })}
             </strong>
             <small>
-              {new Date(initial.startedAt).toLocaleTimeString(undefined, {
+              {new Date(initial.startedAt).toLocaleTimeString(locale, {
                 hour: "numeric",
                 minute: "2-digit",
                 timeZoneName: "short",
@@ -402,47 +435,54 @@ export default function ReportEditor({
             </small>
           </div>
           <div>
-            <span>DURATION / PHOTOS</span>
+            <span>{t("DURATION / PHOTOS")}</span>
             <strong>
-              {formatTime(initial.duration)} / {initial.photos.length} photos
+              {formatTime(initial.duration)} / {initial.photos.length}{" "}
+              {t("photos")}
             </strong>
             <small>
               {[
                 ...new Set(initial.photos.map((p) => p.area).concat(areaNames)),
-              ].join(", ") || "Area unconfirmed"}
+              ].join(", ") || t("Area unconfirmed")}
             </small>
           </div>
           <div>
-            <span>STATUS</span>
+            <span>{t("STATUS")}</span>
             <strong className="burgundy">
-              {report.mode === "sample" ? "Sample · " : ""}
-              {report.reviewStatus === "reviewed" ? "Reviewed" : "Draft"}
-              {dirty ? " · unsaved" : ""}
+              {report.mode === "sample" ? t("Sample · ") : ""}
+              {report.reviewStatus === "reviewed" ? t("Reviewed") : t("Draft")}
+              {dirty ? t(" · unsaved") : ""}
             </strong>
             <small>
               {report.reviewStatus === "reviewed"
-                ? "Local review status"
-                : "Awaiting your review"}
+                ? t("Local review status")
+                : t("Awaiting your review")}
             </small>
           </div>
         </div>
         <div className="report-disclosure">
           {report.mode === "sample"
-            ? "Fictional sample report. These findings are illustrative and are not based on any captured recording or photographs."
+            ? t(
+                "Fictional sample report. These findings are illustrative and are not based on any captured recording or photographs.",
+              )
             : report.mode === "live" && report.reviewStatus !== "reviewed"
-              ? "AI-assisted draft. Review before sharing."
+              ? t("AI-assisted draft. Review before sharing.")
               : report.mode === "manual"
-                ? "Manually prepared from your notes. Review evidence and wording before sharing."
-                : "Reviewed by the local user. This is not a signed inspection or authenticated approval."}
+                ? t(
+                    "Manually prepared from your notes. Review evidence and wording before sharing.",
+                  )
+                : t(
+                    "Reviewed by the local user. This is not a signed inspection or authenticated approval.",
+                  )}
         </div>
         <section className="report-section">
           <div className="report-section-title">
             <span>01</span>
-            <h2>Visit summary</h2>
+            <h2>{t("Visit summary")}</h2>
           </div>
           <div className="summary-text">
             <Editable
-              label="Visit summary"
+              label={t("Visit summary")}
               value={report.summary}
               onChange={(summary) => change({ summary })}
               edit={editing}
@@ -453,10 +493,10 @@ export default function ReportEditor({
         <section className="report-section">
           <div className="report-section-title">
             <span>02</span>
-            <h2>Observations by area</h2>
+            <h2>{t("Observations by area")}</h2>
           </div>
           {!areaNames.length && (
-            <p className="muted">No observations recorded yet.</p>
+            <p className="muted">{t("No observations recorded yet.")}</p>
           )}
           {areaNames.map((area) => (
             <div className="area-group" key={area}>
@@ -467,15 +507,15 @@ export default function ReportEditor({
                   <div className="observation" key={o.id}>
                     <div className="observation-heading">
                       <span className={`state-label ${o.state}`}>
-                        {stateLabels[o.state]}
+                        {t(stateLabels[o.state])}
                       </span>
                       <span className="muted small">
-                        {basisLabels[o.basis]}
-                        {o.needsVerification ? " · needs verification" : ""}
+                        {t(basisLabels[o.basis])}
+                        {o.needsVerification ? t(" · needs verification") : ""}
                       </span>
                     </div>
                     <Editable
-                      label="Observation"
+                      label={t("Observation")}
                       value={o.description}
                       onChange={(description) =>
                         changeObservation(o.id, { description })
@@ -486,7 +526,7 @@ export default function ReportEditor({
                     {editing && (
                       <div className="form-grid">
                         <label>
-                          Area
+                          {t("Area")}
                           <input
                             value={o.area}
                             maxLength={300}
@@ -496,7 +536,7 @@ export default function ReportEditor({
                           />
                         </label>
                         <label>
-                          Observation status
+                          {t("Observation status")}
                           <select
                             value={o.state}
                             onChange={(e) =>
@@ -507,7 +547,7 @@ export default function ReportEditor({
                           >
                             {Object.entries(stateLabels).map(([key, label]) => (
                               <option key={key} value={key}>
-                                {label}
+                                {t(label)}
                               </option>
                             ))}
                           </select>
@@ -534,7 +574,7 @@ export default function ReportEditor({
                         }
                       >
                         <Trash2 size={14} />
-                        Remove observation
+                        {t("Remove observation")}
                       </button>
                     )}
                   </div>
@@ -565,14 +605,14 @@ export default function ReportEditor({
               }}
             >
               <Plus size={16} />
-              Add observation
+              {t("Add observation")}
             </button>
           )}
         </section>
         <section className="report-section">
           <div className="report-section-title">
             <span>03</span>
-            <h2>Work reported complete</h2>
+            <h2>{t("Work reported complete")}</h2>
           </div>
           {completed.length ? (
             <ul className="completed-list">
@@ -587,11 +627,12 @@ export default function ReportEditor({
               ))}
             </ul>
           ) : (
-            <p className="muted">No completed work has been reported.</p>
+            <p className="muted">{t("No completed work has been reported.")}</p>
           )}
           <p className="section-note">
-            Reported completion is not independent verification or an inspection
-            sign-off.
+            {t(
+              "Reported completion is not independent verification or an inspection sign-off.",
+            )}
           </p>
         </section>
         {(["outstanding", "next_step", "question"] as const).map(
@@ -601,10 +642,10 @@ export default function ReportEditor({
                 <span>{String(index + 4).padStart(2, "0")}</span>
                 <h2>
                   {category === "outstanding"
-                    ? "Outstanding work / punch list"
+                    ? t("Outstanding work / punch list")
                     : category === "next_step"
-                      ? "Proposed next steps"
-                      : "Questions & confirmations"}
+                      ? t("Proposed next steps")
+                      : t("Questions & confirmations")}
                 </h2>
               </div>
               {report.actionItems
@@ -617,7 +658,7 @@ export default function ReportEditor({
                     <button
                       className="task-check no-print"
                       disabled={readOnly}
-                      aria-label={`${a.status === "done" ? "Reopen" : "Complete"}: ${a.task}`}
+                      aria-label={`${t(a.status === "done" ? "Reopen" : "Complete")}: ${a.task}`}
                       onClick={() =>
                         changeAction(a.id, {
                           status: a.status === "done" ? "open" : "done",
@@ -631,14 +672,14 @@ export default function ReportEditor({
                       )}
                     </button>
                     <span className="print-only task-print-status">
-                      [{a.status === "done" ? "Done" : "Open"}]
+                      [{a.status === "done" ? t("Done") : t("Open")}]
                     </span>
                     <div className="action-body">
                       <span className="eyebrow">
                         {String(i + 1).padStart(2, "0")} / {a.area}
                       </span>
                       <Editable
-                        label="Action item"
+                        label={t("Action item")}
                         value={a.task}
                         onChange={(task) => changeAction(a.id, { task })}
                         edit={editing}
@@ -647,7 +688,7 @@ export default function ReportEditor({
                       {editing ? (
                         <div className="form-grid">
                           <label>
-                            Area
+                            {t("Area")}
                             <input
                               value={a.area}
                               maxLength={300}
@@ -657,10 +698,10 @@ export default function ReportEditor({
                             />
                           </label>
                           <label>
-                            Assignee
+                            {t("Assignee")}
                             <input
                               value={a.assignee ?? ""}
-                              placeholder="Unassigned"
+                              placeholder={t("Unassigned")}
                               maxLength={300}
                               onChange={(e) =>
                                 changeAction(a.id, {
@@ -670,10 +711,10 @@ export default function ReportEditor({
                             />
                           </label>
                           <label>
-                            Due date / timing
+                            {t("Due date / timing")}
                             <input
                               value={a.dueDateText ?? ""}
-                              placeholder="Unassigned"
+                              placeholder={t("Unassigned")}
                               maxLength={300}
                               onChange={(e) =>
                                 changeAction(a.id, {
@@ -683,7 +724,7 @@ export default function ReportEditor({
                             />
                           </label>
                           <label>
-                            Priority
+                            {t("Priority")}
                             <select
                               value={a.priority}
                               onChange={(e) =>
@@ -693,31 +734,35 @@ export default function ReportEditor({
                                 })
                               }
                             >
-                              <option value="unassigned">Unassigned</option>
-                              <option value="low">Low</option>
-                              <option value="normal">Normal</option>
-                              <option value="high">High</option>
+                              <option value="unassigned">
+                                {t("Unassigned")}
+                              </option>
+                              <option value="low">{t("Low")}</option>
+                              <option value="normal">{t("Normal")}</option>
+                              <option value="high">{t("High")}</option>
                             </select>
                           </label>
                         </div>
                       ) : (
                         <p className="task-meta">
-                          {a.assignee || "Unassigned"} <span>·</span>{" "}
-                          {a.dueDateText || "No due date"}
+                          {a.assignee || t("Unassigned")} <span>·</span>{" "}
+                          {a.dueDateText || t("No due date")}
                           {a.priority !== "unassigned"
-                            ? ` · ${a.priority} priority`
+                            ? t(" · {priority} priority", {
+                                priority: t(a.priority),
+                              })
                             : ""}
-                          {a.status === "done" ? " · Done" : ""}
+                          {a.status === "done" ? t(" · Done") : ""}
                         </p>
                       )}
                       {a.suggestedTrade && (
                         <p className="small muted">
-                          Suggested trade: {a.suggestedTrade} · no person
-                          assigned
+                          {t("Suggested trade:")} {a.suggestedTrade}{" "}
+                          {t("· no person assigned")}
                         </p>
                       )}
                       {a.needsConfirmation && (
-                        <p className="small muted">Needs confirmation</p>
+                        <p className="small muted">{t("Needs confirmation")}</p>
                       )}
                       {references(a)}
                       {photoPicker(a, false)}
@@ -733,26 +778,27 @@ export default function ReportEditor({
                           }
                         >
                           <Trash2 size={14} />
-                          Remove action
+                          {t("Remove action")}
                         </button>
                       )}
                     </div>
                   </div>
                 ))}
               {!report.actionItems.some((a) => a.category === category) && (
-                <p className="muted">None recorded.</p>
+                <p className="muted">{t("None recorded.")}</p>
               )}
               <button
                 className="text-button no-print"
+                disabled={readOnly}
                 onClick={() => addAction(category)}
               >
                 <Plus size={16} />
-                Add{" "}
+                {t("Add")}{" "}
                 {category === "question"
-                  ? "question"
+                  ? t("question")
                   : category === "next_step"
-                    ? "next step"
-                    : "task"}
+                    ? t("next step")
+                    : t("task")}
               </button>
             </section>
           ),
@@ -760,7 +806,7 @@ export default function ReportEditor({
         <section className="report-section">
           <div className="report-section-title">
             <span>07</span>
-            <h2>Photo record</h2>
+            <h2>{t("Photo record")}</h2>
           </div>
           {initial.photos.length ? (
             <div className="report-photos">
@@ -769,10 +815,10 @@ export default function ReportEditor({
                   <PhotoImage photo={p} />
                   <figcaption>
                     <span className="eyebrow">
-                      PHOTO {String(i + 1).padStart(2, "0")} · {p.area}
+                      {t("PHOTO")} {String(i + 1).padStart(2, "0")} · {p.area}
                     </span>
                     <Editable
-                      label={`Caption for photo ${i + 1}`}
+                      label={t("Caption for photo {number}", { number: i + 1 })}
                       value={
                         report.captions.find((c) => c.photoId === p.id)
                           ?.caption ||
@@ -793,8 +839,10 @@ export default function ReportEditor({
                     />
                     <small className="muted">
                       {p.elapsed === null
-                        ? "Uploaded · time unconfirmed"
-                        : `Captured at ${formatTime(p.elapsed)}`}
+                        ? t("Uploaded · time unconfirmed")
+                        : t("Captured at {time}", {
+                            time: formatTime(p.elapsed),
+                          })}
                     </small>
                   </figcaption>
                 </figure>
@@ -802,8 +850,9 @@ export default function ReportEditor({
             </div>
           ) : (
             <p className="muted">
-              No photos attached. Observations with narration evidence remain
-              labeled accordingly.
+              {t(
+                "No photos attached. Observations with narration evidence remain labeled accordingly.",
+              )}
             </p>
           )}
         </section>
@@ -811,30 +860,34 @@ export default function ReportEditor({
           <details className="transcript-details">
             <summary>
               <FileText size={17} />
-              Walkthrough transcript{" "}
+              {t("Walkthrough transcript")}{" "}
               <span>
                 {initial.transcript?.source === "sample"
-                  ? "Fictional sample"
+                  ? t("Fictional sample")
                   : initial.transcript?.source === "manual"
-                    ? "Manual transcript"
-                    : "Original evidence"}
+                    ? t("Manual transcript")
+                    : t("Original evidence")}
               </span>
             </summary>
             {initial.transcript?.segments.map((s) => (
               <div className="transcript-segment" id={s.id} key={s.id}>
                 <span>
-                  {s.start === null ? "Untimed" : formatTime(s.start)}
+                  {s.start === null ? t("Untimed") : formatTime(s.start)}
                 </span>
                 <p>{s.text}</p>
               </div>
             ))}
             {!initial.transcript?.text && (
-              <p className="muted">No transcript supplied.</p>
+              <p className="muted">{t("No transcript supplied.")}</p>
             )}
             {audio && (
               <div className="no-print">
-                <h3>Original audio</h3>
-                <audio controls src={audio} aria-label="Original recording" />
+                <h3>{t("Original audio")}</h3>
+                <audio
+                  controls
+                  src={audio}
+                  aria-label={t("Original recording")}
+                />
               </div>
             )}
           </details>
@@ -842,8 +895,11 @@ export default function ReportEditor({
         <footer className="report-footer">
           <span>ROCKWOOD DEVELOPMENT</span>
           <span>
-            {report.mode === "sample" ? "FICTIONAL SAMPLE · " : ""}SITE
-            WALKTHROUGH / {report.reviewStatus.toUpperCase()}
+            {report.mode === "sample" ? t("FICTIONAL SAMPLE · ") : ""}
+            {t("SITE WALKTHROUGH /")}
+            {t(
+              report.reviewStatus === "reviewed" ? "Reviewed" : "Draft",
+            ).toUpperCase()}
           </span>
         </footer>
       </article>
@@ -851,17 +907,19 @@ export default function ReportEditor({
         <div>
           <strong>
             {dirty
-              ? "You have unsaved changes."
-              : "Your report, ready for review."}
+              ? t("You have unsaved changes.")
+              : t("Your report, ready for review.")}
           </strong>
           <p>
-            Review confirms your local edits. It is not an inspection approval.
+            {t(
+              "Review confirms your local edits. It is not an inspection approval.",
+            )}
           </p>
         </div>
         <div className="button-row">
-          {report.mode !== "sample" && (
+          {report.mode !== "sample" && !readOnly && (
             <button className="button" onClick={() => leave(source)}>
-              View captured source
+              {t("View captured source")}
             </button>
           )}
           <button
@@ -874,7 +932,7 @@ export default function ReportEditor({
             }}
           >
             <Printer size={16} />
-            Print / Save as PDF
+            {t("Print / Save as PDF")}
           </button>
           <button
             className="button primary"
@@ -882,12 +940,13 @@ export default function ReportEditor({
             disabled={saving || readOnly}
           >
             <Check size={17} />
-            Mark reviewed
+            {t("Mark reviewed")}
           </button>
         </div>
         <p className="small muted">
-          Print opens your browser’s print or share flow. Choose Save as PDF
-          where supported.
+          {t(
+            "Print opens your browser’s print or share flow. Choose Save as PDF where supported.",
+          )}
         </p>
       </div>
     </main>

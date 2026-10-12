@@ -149,6 +149,11 @@ export async function createReportPdf(input: {
     `Visit: ${new Date(row.started_at).toLocaleString("en-US", { timeZone: "America/New_York", dateStyle: "long", timeStyle: "short" })} Eastern`,
     10,
   );
+  if (row.payload.participant)
+    paragraph(
+      `Submitted by: ${row.payload.participant.name} | Phone: ${row.payload.participant.phone}`,
+      10,
+    );
   paragraph(
     `Saved revision ${row.revision}  |  ${photos.length} photos`,
     9,
@@ -260,7 +265,8 @@ export async function createReportPdf(input: {
       (c) => c.photoId === photo.id,
     )?.caption;
     if (caption) paragraph(caption, 11, bold);
-    if (photo.note) paragraph(`Photo note: ${photo.note}`, 9);
+    if (photo.note)
+      paragraph("Original photo note is available in the saved evidence.", 9);
     const linked = report.observations.flatMap((o, n) =>
       o.photoIds.includes(photo.id) ? [n + 1] : [],
     );

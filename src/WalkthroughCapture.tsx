@@ -1,4 +1,5 @@
 "use client";
+import { useLanguage } from "./i18n";
 import { useEffect, useRef, useState } from "react";
 import {
   Mic,
@@ -29,6 +30,7 @@ export default function WalkthroughCapture({
   done: (s: Session) => void;
   fallback: (s: Session) => void;
 }) {
+  const { t } = useLanguage();
   const video = useRef<HTMLVideoElement>(null);
   const engine = useRef<WalkthroughRecorder | null>(null);
   const callbacks = useRef({ done, fallback });
@@ -85,10 +87,10 @@ export default function WalkthroughCapture({
     <main className="capture-page">
       <div className="page-heading compact">
         <div>
-          <p className="eyebrow">WALKTHROUGH IN PROGRESS</p>
+          <p className="eyebrow">{t("WALKTHROUGH IN PROGRESS")}</p>
           <h1>{project.name}</h1>
         </div>
-        <span className="sample-label">Sample project</span>
+        <span className="sample-label">{t("Sample project")}</span>
       </div>
       <div className="capture-layout">
         <section className="capture-main">
@@ -98,7 +100,7 @@ export default function WalkthroughCapture({
               muted
               autoPlay
               playsInline
-              aria-label="Live camera preview"
+              aria-label={t("Live camera preview")}
             />
             <div className="viewfinder-top">
               <span
@@ -106,17 +108,17 @@ export default function WalkthroughCapture({
               >
                 <i />
                 {state === "recording"
-                  ? "AUDIO REC"
+                  ? t("AUDIO REC")
                   : state === "paused"
-                    ? "PAUSED"
+                    ? t("PAUSED")
                     : state === "starting"
-                      ? "CONNECTING"
+                      ? t("CONNECTING")
                       : state === "finishing"
-                        ? "SAVING"
-                        : "UNAVAILABLE"}
+                        ? t("SAVING")
+                        : t("UNAVAILABLE")}
                 <b>{formatTime(seconds)}</b>
               </span>
-              <span className="viewfinder-note">STILLS ONLY</span>
+              <span className="viewfinder-note">{t("STILLS ONLY")}</span>
             </div>
             {["starting", "error"].includes(state) && (
               <div className="camera-placeholder">
@@ -127,23 +129,27 @@ export default function WalkthroughCapture({
                 )}
                 <h2>
                   {state === "starting"
-                    ? "Opening your camera"
-                    : "Camera unavailable"}
+                    ? t("Opening your camera")
+                    : t("Camera unavailable")}
                 </h2>
                 <p>
                   {state === "starting"
-                    ? "Allow camera and microphone access to begin."
-                    : "Your visit can still be documented with photos and notes."}
+                    ? t("Allow camera and microphone access to begin.")
+                    : t(
+                        "Your visit can still be documented with photos and notes.",
+                      )}
                 </p>
               </div>
             )}
             <div className="viewfinder-bottom">
               <span>
-                {area === GENERAL ? "Choose an area when ready" : area}
+                {area === GENERAL ? t("Choose an area when ready") : t(area)}
               </span>
               <div
                 className="audio-level"
-                aria-label={`Microphone level ${Math.round(level * 100)} percent`}
+                aria-label={t("Microphone level {level} percent", {
+                  level: Math.round(level * 100),
+                })}
               >
                 {Array.from({ length: 9 }, (_, i) => (
                   <i
@@ -162,19 +168,21 @@ export default function WalkthroughCapture({
             <Mic size={16} />
             <span>
               {state === "recording"
-                ? "Audio recording. Transcript prepared when you finish."
+                ? t("Audio recording. Transcript prepared when you finish.")
                 : state === "paused"
-                  ? "Audio paused. Resume when you are ready."
+                  ? t("Audio paused. Resume when you are ready.")
                   : state === "starting"
-                    ? "Waiting for camera and microphone permission."
+                    ? t("Waiting for camera and microphone permission.")
                     : state === "finishing"
-                      ? "Saving your complete recording and photos."
-                      : "No recording is running. Use photos and typed notes."}
+                      ? t("Saving your complete recording and photos.")
+                      : t(
+                          "No recording is running. Use photos and typed notes.",
+                        )}
             </span>
           </div>
           {message && (
             <Notice tone={state === "error" ? "warning" : "neutral"}>
-              {message}
+              {t(message)}
             </Notice>
           )}
           {state === "error" ? (
@@ -183,7 +191,7 @@ export default function WalkthroughCapture({
                 className="button primary"
                 onClick={() => setAttempt((a) => a + 1)}
               >
-                Retry camera & microphone
+                {t("Retry camera & microphone")}
               </button>
               <button
                 className="button"
@@ -191,7 +199,7 @@ export default function WalkthroughCapture({
                   fallback({ ...session, status: "saved", error: undefined })
                 }
               >
-                Use photos & typed notes
+                {t("Use photos & typed notes")}
               </button>
             </div>
           ) : (
@@ -208,11 +216,11 @@ export default function WalkthroughCapture({
                 }
               >
                 {state === "paused" ? <Play size={23} /> : <Pause size={23} />}
-                <span>{state === "paused" ? "Resume" : "Pause"}</span>
+                <span>{state === "paused" ? t("Resume") : t("Pause")}</span>
               </button>
               <button
                 className={`shutter ${taking ? "flash" : ""}`}
-                aria-label="Take photo"
+                aria-label={t("Take photo")}
                 disabled={
                   state !== "recording" ||
                   taking ||
@@ -232,34 +240,40 @@ export default function WalkthroughCapture({
                 onClick={() => engine.current?.finish()}
               >
                 <Check size={23} />
-                <span>{state === "finishing" ? "Saving…" : "Done"}</span>
+                <span>{state === "finishing" ? t("Saving…") : t("Done")}</span>
               </button>
             </div>
           )}
         </section>
         <aside className="capture-sidebar">
           <label className="area-label">
-            Current area <span>Optional</span>
+            {t("Current area")}
+            <span>{t("Optional")}</span>
             <select value={area} onChange={(e) => setArea(e.target.value)}>
-              <option>{GENERAL}</option>
+              <option value={GENERAL}>{t(GENERAL)}</option>
               {project.areas.map((a) => (
-                <option key={a}>{a}</option>
+                <option key={a} value={a}>
+                  {t(a)}
+                </option>
               ))}
             </select>
           </label>
           <div className="section-rule">
-            <h2>Captured photos</h2>
+            <h2>{t("Captured photos")}</h2>
             <span>
               {session.photos.length} / {LIMITS.photos}
             </span>
           </div>
           <PhotoStrip photos={session.photos} onSelect={setSelected} />
           <label>
-            Walkthrough notes <span className="muted">Optional</span>
+            {t("Walkthrough notes")}
+            <span className="muted">{t("Optional")}</span>
             <textarea
               rows={4}
               maxLength={8000}
-              placeholder="A detail to remember, or a question to follow up…"
+              placeholder={t(
+                "A detail to remember, or a question to follow up…",
+              )}
               defaultValue={session.notes}
               onChange={(e) => engine.current?.setNotes(e.target.value)}
             />
@@ -267,14 +281,16 @@ export default function WalkthroughCapture({
           <div className="capture-tip">
             <CircleHelp size={18} />
             <div>
-              <strong>Walk. Talk. Capture the details.</strong>
+              <strong>{t("Walk. Talk. Capture the details.")}</strong>
               <p>
-                Say the room and describe what you see. Take a photo when it
-                helps explain an observation.
+                {t(
+                  "Say the room and describe what you see. Take a photo when it helps explain an observation.",
+                )}
               </p>
               <p>
-                Keep this page open while recording. Prototype limit: 5 minutes,
-                12 photos.
+                {t(
+                  "Keep this page open while recording. Prototype limit: 5 minutes, 12 photos.",
+                )}
               </p>
             </div>
           </div>

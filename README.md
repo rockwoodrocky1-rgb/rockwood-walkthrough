@@ -1,5 +1,7 @@
 # Rockwood Walkthrough
 
+> **Unpublished feature branch:** this checkout adds name/phone entry and English/Spanish walkthroughs. Read [BRANCH_NOTES.md](BRANCH_NOTES.md) for the current behavior, local preview on port 8791, and connections still pending. The deployment details below describe the unchanged live base version. Do not deploy or apply migrations from this branch yet.
+
 A client-owned shared site-visit prototype with an optional local demo mode: choose a fictional project, record narration while taking still photos, finish, then review an editable report. Built with Next.js App Router, TypeScript, Tailwind/CSS, Zod, the official OpenAI SDK, Supabase Auth/Postgres/private Storage, and temporary recovery storage via idb-keyval.
 
 ## Start
