@@ -40,6 +40,7 @@ import { Back, Header, Modal, Notice } from "./ui";
 import WalkthroughCapture from "./WalkthroughCapture";
 import SessionReview, { makeManualReport } from "./SessionReview";
 import ReportEditor from "./ReportEditor";
+import { restoreReportLink } from "./report-link";
 type Screen = "projects" | "project" | "capture" | "source" | "report";
 export default function App({
   logoAvailable,
@@ -85,7 +86,10 @@ export default function App({
     void refresh()
       .then(async (items) => {
         setSessions(items);
-        const parts = location.hash.slice(1).split("/");
+        const link = restoreReportLink();
+        const parts = link
+          ? ["report", link.project, link.report]
+          : location.hash.slice(1).split("/");
         const p = projects.find((p) => p.id === parts[1]);
         if (p) setProject(p);
         if (parts[0] === "project" && p) setScreen("project");
@@ -93,6 +97,8 @@ export default function App({
           let s =
             items.find((s) => s.id === parts[2]) ||
             (parts[2] === `sample-${p.id}` ? createSample(p) : undefined);
+          if (!s && cloud && parts[2])
+            s = await loadCloudSession(cloud, parts[2]);
           if (s) {
             if (cloud && s.cloud?.mediaLoaded === false) {
               s = await loadCloudSession(cloud, s.id);
@@ -120,7 +126,7 @@ export default function App({
       next === "projects"
         ? ""
         : `${next}/${p.id}${s && ["source", "report", "capture"].includes(next) ? `/${s.id}` : ""}`;
-    history.replaceState(null, "", `#${hash}`);
+    history.replaceState(null, "", `${location.pathname}#${hash}`);
     window.scrollTo({ top: 0 });
   }
   function home() {
@@ -728,6 +734,7 @@ export default function App({
           initial={active}
           logoAvailable={logoAvailable}
           cloudEnabled={!!cloud}
+          cloud={cloud}
           readOnly={!!cloud && !canEditSession(cloud, active)}
           save={update}
           back={() => navigate("project")}

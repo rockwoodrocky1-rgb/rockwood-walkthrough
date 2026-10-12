@@ -24,6 +24,8 @@ import {
   type Observation,
 } from "../shared/model";
 import { Back, Logo, Notice, PhotoImage, useBlobUrl } from "./ui";
+import ReportDelivery from "./ReportDelivery";
+import type { WorkspaceAccess } from "./cloud";
 const basisLabels = {
   narration: "Narration only",
   photo: "Visible in photo",
@@ -82,6 +84,7 @@ export default function ReportEditor({
   source,
   cloudEnabled = false,
   readOnly = false,
+  cloud,
 }: {
   initial: Session;
   project: Project;
@@ -91,6 +94,7 @@ export default function ReportEditor({
   source: () => void;
   cloudEnabled?: boolean;
   readOnly?: boolean;
+  cloud?: WorkspaceAccess;
 }) {
   const [report, setReport] = useState<Report>(initial.report!);
   const [editing, setEditing] = useState(false);
@@ -349,6 +353,9 @@ export default function ReportEditor({
         <div className="no-print">
           <Notice>{message}</Notice>
         </div>
+      )}
+      {cloud && initial.report?.mode !== "sample" && (
+        <ReportDelivery access={cloud} session={initial} readOnly={readOnly} />
       )}
       <article className={`report-paper ${editing ? "is-editing" : ""}`}>
         <header className="report-header">

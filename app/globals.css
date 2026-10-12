@@ -2220,3 +2220,7 @@ audio {
     padding-top: 30px;
   }
 }
+.report-delivery { margin: 0 0 20px; padding: 18px 20px; background: #eef0e8; border: 1px solid #dce0d3; display: flex; align-items: center; justify-content: space-between; gap: 16px; border-radius: 8px; }
+.report-delivery p { margin: 5px 0; font-size: 14px; }
+.report-delivery small { color: #59604f; }
+@media (max-width: 640px) { .report-delivery { align-items: stretch; flex-direction: column; padding: 14px; } .report-delivery .button { width: 100%; } }

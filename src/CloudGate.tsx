@@ -1,4 +1,5 @@
 "use client";
+import { rememberReportLink } from "./report-link";
 import { useEffect, useState } from "react";
 import type { Session as AuthSession } from "@supabase/supabase-js";
 import { getSupabase } from "./supabase";
@@ -169,6 +170,7 @@ export default function CloudGate(props: Props) {
                   setBusy(true);
                   setMessage("");
                   try {
+                    rememberReportLink();
                     const result = await client.auth.signInWithOtp({
                       email: email.trim(),
                       options: {
