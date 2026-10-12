@@ -291,7 +291,6 @@
   "Saving…": "Guardando…",
   "Checking…": "Comprobando…",
   "Sessions, audio, photos, and reports use this browser’s IndexedDB storage. Clearing browser data removes them. This is not cloud backup or offline synchronization.": "Las visitas, el audio, las fotos y los informes se guardan en este navegador. Borrar sus datos elimina estos archivos. No es una copia en la nube ni una sincronización sin conexión.",
-  "Shared visits · most recent 100": "Visitas compartidas · 100 más recientes",
   "Sign in again before processing this visit.": "Vuelve a abrir tu sesión antes de procesar esta visita.",
   "Sign in again to view this report.": "Vuelve a abrir tu sesión para ver este informe.",
   "Sign in to Rockwood before using Live AI.": "Abre tu sesión de Rockwood antes de usar la IA.",
@@ -443,5 +442,6 @@
   "This report link is invalid or no longer available.": "Este enlace del informe no es válido o ya no está disponible.",
   "Could not load report photos. Refresh to try again.": "No se pudieron cargar las fotos. Actualiza la página para reintentar.",
   "The daily processing limit has been reached or processing is not connected. Your original visit is saved.": "Se alcanzó el límite diario de procesamiento o el servicio no está conectado. Tu visita original está guardada.",
-  "Completed visits upload to Rockwood. This browser session can reopen its own visits. The company receives a report link. Only the most recent 100 visits are listed during testing.": "Las visitas terminadas se guardan en Rockwood. Esta sesión puede volver a abrir sus propias visitas. La empresa recibe un enlace del informe. Durante las pruebas se muestran las 100 visitas más recientes."
+  "Shared property history": "Historial compartido de la propiedad",
+  "Completed visits upload to Rockwood. Everyone who enters can open the shared reports for each property. This browser session can edit its own visits.": "Las visitas terminadas se guardan en Rockwood. Todas las personas que ingresen pueden abrir los informes compartidos de cada propiedad. Esta sesión del navegador puede editar sus propias visitas."
 }

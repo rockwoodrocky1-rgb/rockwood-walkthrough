@@ -454,10 +454,10 @@ export default function App({
             <p>
               {uploading === active.id
                 ? t("Keep this page open until the upload completes.")
-                : active.cloud?.error ||
+                : t(active.cloud?.error ||
                   (active.cloud?.savedAt && !active.cloud.pending
                     ? "Photos, audio, notes, and reports are saved to Rockwood."
-                    : "A recovery copy stays in this browser until the upload completes.")}
+                    : "A recovery copy stays in this browser until the upload completes."))}
             </p>
             {!uploading && active.cloud?.pending && (
               <button
@@ -687,7 +687,7 @@ export default function App({
               <span>
                 <HardDrive size={14} />{" "}
                 {cloud
-                  ? t("Shared visits · most recent 100")
+                  ? t("Shared property history")
                   : t("Saved on this device")}
               </span>
             </div>
@@ -844,7 +844,7 @@ export default function App({
               </h3>
               <p>
                 {cloud ? (
-                  "Completed visits upload to Rockwood. This browser session can reopen its own visits. The company receives a report link. Only the most recent 100 visits are listed during testing."
+                  t("Completed visits upload to Rockwood. Everyone who enters can open the shared reports for each property. This browser session can edit its own visits.")
                 ) : (
                   <>
                     {t(
