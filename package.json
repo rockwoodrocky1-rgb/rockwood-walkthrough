@@ -1,0 +1,39 @@
+{
+  "name": "rockwood-walkthrough",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "next dev --hostname 127.0.0.1 --port 8790",
+    "build": "next build",
+    "start": "next start --hostname 127.0.0.1 --port 8790",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run",
+    "test:e2e": "playwright test",
+    "lint": "eslint ."
+  },
+  "dependencies": {
+    "@supabase/supabase-js": "2.117.3",
+    "idb-keyval": "^6.2.2",
+    "lucide-react": "^0.468.0",
+    "next": "^16.2.0",
+    "openai": "^6.0.0",
+    "react": "^19.2.0",
+    "react-dom": "^19.2.0",
+    "zod": "^4.1.12"
+  },
+  "devDependencies": {
+    "@playwright/test": "^1.56.0",
+    "@tailwindcss/postcss": "^4.1.0",
+    "@types/node": "^22.18.0",
+    "@types/react": "^19.2.0",
+    "@types/react-dom": "^19.2.0",
+    "eslint": "^9.39.0",
+    "eslint-config-next": "^16.2.0",
+    "fake-indexeddb": "^6.2.4",
+    "supabase": "2.120.0",
+    "tailwindcss": "^4.1.0",
+    "typescript": "^5.9.3",
+    "vitest": "^4.0.0"
+  }
+}

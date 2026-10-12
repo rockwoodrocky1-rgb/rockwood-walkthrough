@@ -1,0 +1,29 @@
+[
+  {
+    "use": "Residential architecture",
+    "photographer": "Wes Fischer",
+    "pageUrl": "https://unsplash.com/photos/g39p1kDjvSY",
+    "licenseUrl": "https://unsplash.com/license",
+    "asset": "residence",
+    "localFile": "residence.webp",
+    "note": "Illustrative reference only; not a verified Rockwood project."
+  },
+  {
+    "use": "Miami Beach architecture",
+    "photographer": "Nadi Spasibenko",
+    "pageUrl": "https://unsplash.com/photos/a-tall-white-building-sitting-next-to-a-palm-tree-R7VcpEnXEQw",
+    "licenseUrl": "https://unsplash.com/license",
+    "asset": "urban",
+    "localFile": "office.webp",
+    "note": "Illustrative reference only; not a verified Rockwood project."
+  },
+  {
+    "use": "Neighborhood study",
+    "photographer": "Zac Gudakov",
+    "pageUrl": "https://unsplash.com/photos/0qir5hBOj18",
+    "licenseUrl": "https://unsplash.com/license",
+    "asset": "house",
+    "localFile": "house.webp",
+    "note": "Illustrative reference only; not a verified Rockwood project."
+  }
+]
