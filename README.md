@@ -1,5 +1,7 @@
 # Rockwood Walkthrough
 
+> **Name/phone and bilingual update:** the user approved merging and pushing this feature to `main` on October 12, 2026. Read [BRANCH_NOTES.md](BRANCH_NOTES.md) for behavior, local preview on port 8791, and hosted connections still pending. A merge does not activate the required Supabase migration, anonymous sessions, translation or email sender. The deployment details below describe the previously verified live version; verify the actual deployed commit before testing the new features online.
+
 A client-owned shared site-visit prototype with an optional local demo mode: choose a fictional project, record narration while taking still photos, finish, then review an editable report. Built with Next.js App Router, TypeScript, Tailwind/CSS, Zod, the official OpenAI SDK, Supabase Auth/Postgres/private Storage, and temporary recovery storage via idb-keyval.
 
 ## Start

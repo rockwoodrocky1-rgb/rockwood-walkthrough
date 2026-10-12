@@ -3,6 +3,7 @@ import { z } from "zod";
 import { cloudRowSchema } from "../src/cloud";
 import { createReportPdf } from "./report-pdf";
 import { HttpError } from "./api";
+import { sharedReportLink } from "./report-share";
 import nodemailer from "nodemailer";
 
 export const REPORT_RECIPIENT = "rockwoodrocky1@gmail.com";
@@ -54,7 +55,11 @@ export async function memberClient(request: Request) {
     },
   });
   const { data, error } = await client.auth.getUser(authorization.slice(7));
-  if (error || !data.user?.email_confirmed_at || data.user.is_anonymous)
+  if (
+    error ||
+    !data.user ||
+    (!data.user.email_confirmed_at && !data.user.is_anonymous)
+  )
     throw new HttpError(401, "Sign in again to view this report.");
   return { client, userId: data.user.id };
 }
@@ -114,7 +119,7 @@ export function emailEnvelope(
     from,
     to: [REPORT_RECIPIENT],
     subject: `${isTest ? "[TEST] " : ""}Rockwood walkthrough - ${project}`,
-    text: `A new walkthrough report is ready for ${project}.\n\nThe attached PDF includes the report and photos as first created. Draft reports need review.\n\nOpen the saved report to evaluate original photos, audio, notes, and later edits:\n${reportUrl}\n\nSign in with your approved Rockwood account.\n${isTest ? "\nThis report uses a fictional test project.\n" : ""}\nRockwood Development`,
+    text: `A new walkthrough report is ready for ${project}.\n\nThe attached PDF includes the report and photos as first created. Draft reports need review.\n\nOpen the saved report to evaluate original photos, audio, notes, and later edits:\n${reportUrl}\n\nThe link opens this report without signing in. Anyone with this link can view this visit; share it only with the intended reviewers.\n${isTest ? "\nThis report uses a fictional test project.\n" : ""}\nRockwood Development`,
     filename: `rockwood-report-${jobId}.pdf`,
   };
 }
@@ -227,6 +232,11 @@ export async function processDelivery(
       row.payload.report?.id !== job.report_id
     )
       throw new Error("Report snapshot is invalid.");
+    if (
+      row.payload.language === "es" &&
+      row.payload.report.outputLanguage !== "en"
+    )
+      throw new Error("The English report must be prepared before delivery.");
     // Do not send an archived visit that was waiting in the queue.
     const current = await client
       .from("walkthroughs")
@@ -274,7 +284,11 @@ export async function processDelivery(
         row,
         projectName: job.project_name,
         isSampleProject: job.is_sample_project,
-        reportUrl: reportLink(process.env.APP_URL!, row.project_id, row.id),
+        reportUrl: sharedReportLink(
+          process.env.APP_URL!,
+          row.workspace_id,
+          row.id,
+        ),
         photos,
       });
       if (pdf.length > 10_000_000)
@@ -317,7 +331,7 @@ export async function processDelivery(
         provider === "gmail"
           ? `Rockwood Development <${REPORT_RECIPIENT}>`
           : process.env.REPORT_EMAIL_FROM!,
-        reportLink(process.env.APP_URL!, row.project_id, row.id),
+        sharedReportLink(process.env.APP_URL!, row.workspace_id, row.id),
         job.project_name,
         job.id,
         job.is_sample_project,

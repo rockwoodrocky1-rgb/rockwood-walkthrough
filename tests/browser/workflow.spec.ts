@@ -3,6 +3,11 @@ import path from "node:path";
 const imagePath = path.resolve("public/brand/rockwood-logo.png");
 async function home(page: Page) {
   await page.goto("/");
+  if (await page.getByLabel("Your name", { exact: true }).isVisible()) {
+    await page.getByLabel("Your name", { exact: true }).fill("Test Visitor");
+    await page.getByLabel("Phone number", { exact: true }).fill("3055550123");
+    await page.getByRole("button", { name: "Continue", exact: true }).click();
+  }
   await expect(
     page.getByRole("heading", { name: "Your projects" }),
   ).toBeVisible();
@@ -37,7 +42,9 @@ async function noOverflow(page: Page) {
 async function readSessions(page: Page) {
   return page.evaluate(async () => {
     const db = await new Promise<IDBDatabase>((resolve, reject) => {
-      const r = indexedDB.open("rockwood-walkthrough-v1");
+      const r = indexedDB.open(
+        `rockwood-walkthrough-v1-field-demo-${JSON.parse(sessionStorage.getItem("rockwood-field-demo-v1")!).id}`,
+      );
       r.onsuccess = () => resolve(r.result);
       r.onerror = () => reject(r.error);
     });
@@ -307,7 +314,9 @@ test("simulated media: audio-only recorder, independent photos, pause timeline, 
   expect(stats.stopped).toBe(true);
   const saved = await page.evaluate(async () => {
     const db = await new Promise<IDBDatabase>((resolve) => {
-      const r = indexedDB.open("rockwood-walkthrough-v1");
+      const r = indexedDB.open(
+        `rockwood-walkthrough-v1-field-demo-${JSON.parse(sessionStorage.getItem("rockwood-field-demo-v1")!).id}`,
+      );
       r.onsuccess = () => resolve(r.result);
     });
     return new Promise<{ size: number; photos: number; type: string }>(

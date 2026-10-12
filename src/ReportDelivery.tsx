@@ -1,10 +1,12 @@
 "use client";
+import { useLanguage } from "./i18n";
 import { useEffect, useState } from "react";
 import type { WorkspaceAccess } from "./cloud";
 import type { Session } from "../shared/model";
 type Status = {
   configured: boolean;
   pdfUrl: string | null;
+  reportUrl: string | null;
   job: { status: string; last_error: string | null; revision: number } | null;
 };
 export default function ReportDelivery({
@@ -16,6 +18,7 @@ export default function ReportDelivery({
   session: Session;
   readOnly: boolean;
 }) {
+  const { t } = useLanguage();
   const [status, setStatus] = useState<Status>();
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
@@ -102,12 +105,13 @@ export default function ReportDelivery({
   return (
     <aside className="report-delivery no-print" aria-live="polite">
       <div>
-        <strong>Report delivery</strong>
-        <p>{label}</p>
+        <strong>{t("Report delivery")}</strong>
+        <p>{t(label)}</p>
         {sent && (
           <small>
-            The emailed PDF is the original report. This page includes saved
-            edits.
+            {t(
+              "The emailed PDF is the original report. This page includes saved edits.",
+            )}
           </small>
         )}
       </div>
@@ -119,23 +123,21 @@ export default function ReportDelivery({
             target="_blank"
             rel="noreferrer"
           >
-            Download PDF
+            {t("Download PDF")}
           </a>
         )}
-        {status?.pdfUrl && !status.configured && (
+        {status?.pdfUrl && status.reportUrl && !status.configured && (
           <button
             className="button"
             onClick={() => {
-              const link = new URL(location.origin);
-              link.searchParams.set("report", session.id);
-              link.searchParams.set("project", session.projectId);
+              const link = status.reportUrl!;
               const title =
                 access.projects.find((p) => p.id === session.projectId)?.name ||
                 "Site visit";
-              location.href = `mailto:rockwoodrocky1@gmail.com?subject=${encodeURIComponent(`Rockwood walkthrough - ${title}`)}&body=${encodeURIComponent(`Report and photos: ${link.toString()}\n\nSign in to Rockwood to review. To include the PDF attachment, download it from the report and attach it to this email.`)}`;
+              location.href = `mailto:rockwoodrocky1@gmail.com?subject=${encodeURIComponent(`Rockwood walkthrough - ${title}`)}&body=${encodeURIComponent(`Report and photos: ${link}\n\nThis read-only link opens without signing in. Share it only with the intended reviewers. To include the PDF attachment, download it from the report and attach it to this email.`)}`;
             }}
           >
-            Draft email with report link
+            {t("Draft email with report link")}
           </button>
         )}
         {!readOnly &&
@@ -147,7 +149,7 @@ export default function ReportDelivery({
               onClick={() => void retry()}
               disabled={busy}
             >
-              {busy ? "Checking…" : "Check delivery"}
+              {busy ? t("Checking…") : t("Check delivery")}
             </button>
           )}
       </div>

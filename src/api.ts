@@ -110,6 +110,7 @@ export async function transcribe(session: Session) {
 }
 export async function prepareReport(session: Session) {
   const input: ReportInput = {
+    language: session.language ?? "en",
     sessionId: session.id,
     projectId: session.projectId as ReportInput["projectId"],
     notes: session.notes,
@@ -134,4 +135,19 @@ export async function prepareReport(session: Session) {
     await request("/api/report", body, { "Content-Type": "application/json" }),
   );
   return validateEvidence(report, input);
+}
+
+export async function translateReport(
+  report: import("../shared/model").ReportContent,
+) {
+  const config = await getLiveConfig();
+  if (!config.live)
+    throw new Error(
+      "English translation is not connected yet. Your original notes and photos are saved. Please retry once translation is connected.",
+    );
+  return reportContentSchema.parse(
+    await request("/api/translate-report", JSON.stringify(report), {
+      "Content-Type": "application/json",
+    }),
+  );
 }

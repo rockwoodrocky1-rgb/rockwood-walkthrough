@@ -2224,3 +2224,25 @@ audio {
 .report-delivery p { margin: 5px 0; font-size: 14px; }
 .report-delivery small { color: #59604f; }
 @media (max-width: 640px) { .report-delivery { align-items: stretch; flex-direction: column; padding: 14px; } .report-delivery .button { width: 100%; } }
+
+/* Keep the language choice visible and thumb-sized throughout the walkthrough. */
+.language-toggle { display: inline-flex; flex-shrink: 0; gap: 2px; padding: 3px; border: 1px solid var(--line); border-radius: 8px; }
+.language-toggle button { min-height: 42px; padding: 0 12px; font-size: 12px; border-radius: 5px; white-space: nowrap; }
+.language-toggle button[aria-pressed="true"] { color: #fff; background: var(--ink, #2c3328); }
+.language-toggle button:focus-visible { outline: 2px solid #7d443d; outline-offset: 2px; }
+.field-entry { max-width: 620px; }
+.field-entry h1 { max-width: 520px; }
+.participant-summary { margin: 0 auto 18px; max-width: 1056px; overflow-wrap: anywhere; }
+@media(max-width: 900px) { .device-note { display: none; } .language-toggle { margin-left: auto; } }
+@media(max-width: 700px) {
+  .app-header { flex-wrap: wrap; gap: 10px 12px; }
+  .app-header .brand-button { flex: 1; text-align: left; }
+  .app-header .logo { width: min(40vw, 174px); }
+  .app-header .header-divider, .app-header .app-descriptor { display: none; }
+  .language-toggle { margin-left: 0; }
+  .language-toggle button { padding: 0 8px; font-size: 11px; }
+  .field-entry { padding-top: 30px; }
+  .field-entry h1 { font-size: clamp(30px, 8vw, 42px); }
+  .auth-form input { font-size: 16px; }
+  .participant-summary { margin: 0 16px 18px; }
+}

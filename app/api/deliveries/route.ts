@@ -1,3 +1,4 @@
+import { sharedReportLink } from "../../../server/report-share";
 import { after } from "next/server";
 import { z } from "zod";
 import {
@@ -55,7 +56,19 @@ export async function GET(request: Request) {
       if (!signed.error) pdfUrl = signed.data.signedUrl;
     }
     return Response.json(
-      { job, configured: deliveryConfigured(), pdfUrl },
+      {
+        job,
+        configured: deliveryConfigured(),
+        pdfUrl,
+        reportUrl:
+          job && process.env.APP_URL && process.env.SUPABASE_SECRET_KEY
+            ? sharedReportLink(
+                process.env.APP_URL,
+                job.workspace_id,
+                job.walkthrough_id,
+              )
+            : null,
+      },
       { headers: { "Cache-Control": "no-store" } },
     );
   } catch (error) {
@@ -80,7 +93,10 @@ export async function POST(request: Request) {
       visit.error ||
       !visit.data ||
       (role !== "owner" &&
-        !(role === "editor" && visit.data.created_by === userId))
+        !(
+          ["editor", "contributor"].includes(role) &&
+          visit.data.created_by === userId
+        ))
     )
       throw new HttpError(
         403,
