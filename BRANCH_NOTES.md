@@ -1,6 +1,8 @@
 # Name, phone, and Spanish walkthrough branch
 
-Branch: `feat/name-phone-spanish`. Base: `ace615d`. This checkout is separate from the live app. Do not push, merge, deploy, apply its migration to the hosted Supabase project, or change hosting secrets until requested. The existing Vercel test site remains unchanged.
+Source branch: `feat/name-phone-spanish`. Base: `ace615d`. On October 12, 2026, the user approved merging into `main` and pushing to the client repository. This supersedes the earlier branch-only restriction. Hosted activation still depends on the setup and cloud verification below; a successful Git push alone does not make this feature ready online.
+
+Before this merge, Vercel blocked the prior `main` deployment (`ace615d`) because its commit author did not have contributing access. The dashboard says Hobby does not support collaboration for private repositories. The existing public test URL still served the previously verified version. Resolve deployment access through the client's supported account configuration; do not rewrite author identity to bypass that restriction or start a paid plan without authorization.
 
 ## What is implemented
 
@@ -23,10 +25,10 @@ Open http://127.0.0.1:8791/. No `.env.local` or client credentials were copied t
 
 Without AI credentials, Spanish source can be captured/saved but English report preparation shows a clear pending-connection message. It never pretends to translate. English manual reports and fictional sample reports can still be tested. The source and report controls remain available in either language.
 
-## Connections needed when this branch is approved
+## Connections needed before hosted activation
 
-1. Reconcile the existing Supabase migration history first (the baseline was applied in the dashboard). Review and apply only the new `20261012194009_field_contacts_and_english_reports.sql` migration to a separate preview database, then enable Supabase Anonymous Sign-Ins. Do not change existing live test access while the user is testing.
-2. Set the preview's public Supabase URL/key and server-only key for that preview database. Never reuse the live main environment's secrets in an untrusted preview. `APP_URL` must be the eventual branch/hosted origin so new PDF/email links point to it.
+1. Reconcile the existing Supabase migration history first (the baseline was applied in the dashboard). Review and validate the new `20261012194009_field_contacts_and_english_reports.sql` migration in an isolated database, then apply that migration and enable Supabase Anonymous Sign-Ins in the intended hosted test project before releasing the new form. Existing private records must retain their access restrictions.
+2. Verify the hosted environment's public Supabase URL/key and server-only key refer to the intended client test project. Use separate credentials for an isolated preview; never reuse main Production secrets in an untrusted preview. `APP_URL` must match the hosted origin so new PDF/email links point to it.
 3. Connect client-owned OpenAI credentials and enable `LIVE_AI_ENABLED` with exact `ALLOWED_ORIGINS`. The UI toggle itself does not need AI. Genuine translation/transcription was not tested with a paid provider key in this branch.
 4. Connect an authorized email sender. The current Gmail mailbox is a recipient, not an automatic sending credential. `GMAIL_APP_PASSWORD` or the already-supported transactional sender is still needed for unattended email; none was created or enabled. No email was sent from this branch. The worker must be invoked after report creation; the existing report screen does this. Scheduled retry remains a separate hosting configuration, not enabled on Hobby by this branch.
 5. Run a cloud smoke test: enter name/phone in two separate browser sessions, capture Spanish narration/photo notes, verify the original Spanish evidence and saved English report, verify private PDF generation, verify receipt at `rockwoodrocky1@gmail.com`, and open the emailed read-only link in a new browser with no session. Confirm visitor A cannot access visitor B via the database, storage API or delivery endpoint.
