@@ -1,4 +1,4 @@
--- Branch-only migration. Do not apply to the current shared test while it is in use.
+-- Name/phone entry and English reports. Apply with the subsequent shared-property access migration.
 -- Anonymous Auth sessions are invisible to field users: name + phone are self-reported
 -- contact details, never proof of identity and never a cross-device lookup key.
 alter table public.workspace_members drop constraint workspace_members_role_check;

@@ -3,6 +3,7 @@ import { createClient } from "@supabase/supabase-js";
 import {
   archiveCloudSession,
   loadCloudSession,
+  listCloudSessions,
   mergeSessions,
   rowToSession,
   saveCloudSession,
@@ -71,6 +72,27 @@ function session(): Session {
   };
 }
 describe("shared walkthrough persistence", () => {
+  it("loads older property visits beyond the first hundred records", async () => {
+    const records = Array.from({ length: 105 }, (_, i) => ({ ...row, id: `visit-${i}` }));
+    const fetcher = vi.fn<typeof fetch>(async (input) => {
+      const url = new URL(String(input));
+      const offset = Number(url.searchParams.get("offset") ?? 0);
+      const limit = Number(url.searchParams.get("limit") ?? 100);
+      expect(url.searchParams.get("workspace_id")).toBe(`eq.${workspace}`);
+      return response(records.slice(offset, offset + limit));
+    });
+    const visits = await listCloudSessions(setup(fetcher));
+    expect(visits).toHaveLength(105);
+    expect(visits.at(-1)?.id).toBe("visit-104");
+    expect(fetcher).toHaveBeenCalledTimes(2);
+  });
+  it("does not silently present an incomplete visit list when a later page fails", async () => {
+    const fetcher = vi.fn<typeof fetch>(async (input) => {
+      const offset = Number(new URL(String(input)).searchParams.get("offset") ?? 0);
+      return offset ? response({ message: "Connection interrupted" }, 400) : response(Array.from({ length: 100 }, () => row));
+    });
+    await expect(listCloudSessions(setup(fetcher))).rejects.toThrow("Could not load");
+  });
   it("uploads media before committing metadata and confirms the server revision", async () => {
     const calls: string[] = [];
     const fetcher = vi.fn<typeof fetch>(async (input, init) => {

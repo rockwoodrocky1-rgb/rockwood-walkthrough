@@ -1,6 +1,6 @@
 # Rockwood Walkthrough
 
-> **Name/phone and bilingual update:** the user approved merging and pushing this feature to `main` on October 12, 2026. Read [BRANCH_NOTES.md](BRANCH_NOTES.md) for behavior, local preview on port 8791, and hosted connections still pending. A merge does not activate the required Supabase migration, anonymous sessions, translation or email sender. The deployment details below describe the previously verified live version; verify the actual deployed commit before testing the new features online.
+> **Name/phone and bilingual update:** the owner approved shared property history and publishing to `main`. The field-contact/shared-read migrations and anonymous browser sessions are enabled in the client test project. Read [BRANCH_NOTES.md](BRANCH_NOTES.md) for behavior and verification. AI translation and automatic email sending still need provider credentials; they are not activated by deployment.
 
 A client-owned shared site-visit prototype with an optional local demo mode: choose a fictional project, record narration while taking still photos, finish, then review an editable report. Built with Next.js App Router, TypeScript, Tailwind/CSS, Zod, the official OpenAI SDK, Supabase Auth/Postgres/private Storage, and temporary recovery storage via idb-keyval.
 
@@ -13,7 +13,7 @@ npm ci
 npm run dev
 ```
 
-Open **http://127.0.0.1:8790** in a normal browser tab. For the production build:
+Open **http://127.0.0.1:8791** in a normal browser tab. For the production build:
 
 ```sh
 npm run build
@@ -81,11 +81,11 @@ Set `NEXT_PUBLIC_SUPABASE_URL` and `NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY` in `.e
 
 The schema is in `supabase/migrations/20261012180049_rockwood_shared_walkthroughs.sql`. It and `20261012182342_restrict_auto_rls_helper.sql` were applied through the signed-in SQL Editor on October 12, 2026 because the Supabase connector was not connected. **Do not rerun this baseline against the existing project.** Before enabling CLI/GitHub database deployments, reconcile migration history with these already applied migrations. `supabase/tests/access.sql` passed against the live project in a rolled-back transaction: member writes, outsider isolation, immutable ownership, revision checks, private media and protected invitation claiming. Supabase Security Advisor then reported zero errors and zero warnings; its one informational notice is the intentionally inaccessible private invitations table having RLS with no direct-access policy.
 
-- `workspaces`, `workspace_members`, `projects`, `walkthroughs`: explicit grants and RLS; anonymous reads/writes are denied. Members see their workspace; owners edit all visits; editors edit their own; viewers only read.
+- `workspaces`, `workspace_members`, `projects`, `walkthroughs`: explicit grants and RLS. The name/phone form creates an invisible Supabase anonymous session and registers it in the Rockwood workspace. Everyone who enters can read all property visits, photos and PDFs; owners edit all visits and contributors edit only their own. Unregistered sessions and other workspaces remain excluded. Names and phone numbers are self-reported; anyone with the app link can enter.
 - `walkthrough-media`: private, immutable photo/audio objects. Metadata commits only after every asset uploads successfully. Files use content-hash paths so upload retries do not replace existing media.
 - Reports, notes, transcripts and photo metadata are stored with each visit’s versioned JSON document. This can later be normalized into tasks/documents without losing the original evidence.
 - Database revision checks prevent silent overwrites from another device. A conflicting edit stays in the local recovery copy for review; it is not automatically merged.
-- The list loads the latest 100 visit records; media downloads only when opening a visit. Paging/search and large-file resumable uploads remain production expansion work.
+- The list loads every visit in stable batches of 100 records; media downloads only when opening a visit. Search and large-file resumable uploads remain production expansion work.
 - Archive hides a visit while retaining the record and media. A database administrator can restore it by clearing `archived_at` and incrementing `revision`. Old immutable media versions are retained; establish a retention/backup plan before real production use.
 
 Recording and unfinished uploads use account-scoped IndexedDB recovery stores. A successful cloud upload removes that recovery copy; opening shared media loads it into browser memory. Captured bytes necessarily pass through the browser while recording. Files are never automatically added to the phone’s Photos or Files apps. Keep the tab open during upload. An interrupted recording can recover chunks only if the browser delivered and persisted them; unfinished audio may not play.
@@ -94,9 +94,9 @@ The original anonymous prototype stores remain untouched. Earlier recordings are
 
 ### Team sign-in and hosting
 
-The app uses Supabase email links and claims only invitations prepared by an administrator after checking the actual verified email in `auth.users`. Browser-supplied user metadata cannot grant membership. Additional teammates must be added deliberately to `private.workspace_invitations` with an appropriate role; no teammate invitations have been sent.
+Field testers enter their name and phone number. No email link, SMS, password or verification is required. The database assigns the fixed contributor role; browser metadata cannot grant owner access. Every field tester can see shared property history. Only the original browser session or company owner can edit a visit. Clearing browser data or changing person creates a new write identity, even with the same phone number.
 
-Supabase’s default email service is restricted to organization-team addresses. Configure a client-owned SMTP provider and sender domain before inviting Mateo or other field testers. Do not give field users Supabase dashboard access as an email-delivery workaround. See [Supabase SMTP requirements](https://supabase.com/docs/guides/auth/auth-smtp).
+Existing verified owner sessions retain their company role. Field access grants no Supabase dashboard access. Supabase Anonymous Sign-Ins must be enabled for this flow. Report email delivery is a separate server connection and is not enabled by removing email sign-in.
 
 Supabase stores data; Vercel hosts the Next.js frontend and PDF worker. The client-owned `rockwood1/rockwood-walkthrough` project is deployed on Hobby at `https://rockwood-walkthrough.vercel.app/`. Supabase's Auth Site URL and exact redirect allowlist include that address. The hosted main environment has the public Supabase connection, encrypted server key, `APP_URL`, `ALLOWED_ORIGINS`, and `REPORT_DELIVERY_ENABLED=true`. Live AI remains disabled, email credentials are absent, and no cron is scheduled. No paid hosting subscription has been started. Hosting-plan eligibility must be revisited for commercial operation.
 
@@ -164,7 +164,7 @@ A database lease prevents concurrent workers from sending the same job. Before p
 
 - Source: https://github.com/rockwoodrocky1-rgb/rockwood-walkthrough (private, client-owned).
 - Database: Rockwood Development / Rockwood Walkthrough — Test, ref `vyvwqullxdyeympptyix`.
-- Hosting: Vercel team `rockwood1` (Rockwood), project `rockwood-walkthrough`, https://rockwood-walkthrough.vercel.app/. The client authorized this free test deployment and declined paid upgrades. The GitHub app is installed only for this repository.
+- Hosting: Vercel team `rockwood1` (Rockwood), project `rockwood-walkthrough`, https://rockwood-walkthrough.vercel.app/. The client chose owner-operated publishing and approved Vercel's GitHub App for all current/future repositories in `rockwoodrocky1-rgb`. An upgrade may be reviewed if needed; no paid checkout has been authorized. See AGENTS.md for the verified repository-local owner identity and client-scoped GitHub CLI setup.
 - Website: separate project, outside this app's deployment.
 - GitHub Actions validates lint, TypeScript, tests, build and runtime dependency advisories without production secrets.
 

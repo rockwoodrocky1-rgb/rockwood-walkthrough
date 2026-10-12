@@ -6,6 +6,7 @@ const db = new PGlite();
 const userA = "11111111-1111-4111-8111-111111111111";
 const userB = "22222222-2222-4222-8222-222222222222";
 const owner = "33333333-3333-4333-8333-333333333333";
+const outsider = "44444444-4444-4444-8444-444444444444";
 let workspace: string;
 async function asUser(id: string, sql: string) {
   await db.exec(
@@ -35,7 +36,7 @@ beforeAll(async () => {
     await db.query<{ id: string }>("select id from public.workspaces")
   ).rows[0].id;
   await db.exec(
-    `insert into auth.users values('${userA}',null,null,true),('${userB}',null,null,true),('${owner}','rockwoodrocky1@gmail.com',now(),false);`,
+    `insert into auth.users values('${userA}',null,null,true),('${userB}',null,null,true),('${outsider}',null,null,true),('${owner}','rockwoodrocky1@gmail.com',now(),false);`,
   );
   await asUser(
     userA,
@@ -65,7 +66,7 @@ describe("Name/phone field access against local PostgreSQL", () => {
       asUser(userA, "select public.register_field_contact('A','not-a-phone');"),
     ).rejects.toThrow();
   });
-  it("stamps the actual contact and allows own visits, never another visitor's records", async () => {
+  it("shares property visits with entered users while preventing changes to another person's visit", async () => {
     await asUser(
       userA,
       `insert into public.walkthroughs(workspace_id,id,project_id,started_at,payload) values('${workspace}','visit-a','coral-gables',now(),'${JSON.stringify({ notes: "Pendiente", photos: [], participant: { name: "Forged", phone: "99999999" } })}');`,
@@ -84,7 +85,7 @@ describe("Name/phone field access against local PostgreSQL", () => {
           "select id from public.walkthroughs where id='visit-a';",
         )
       )[0].rows,
-    ).toEqual([]);
+    ).toEqual([{ id: "visit-a" }]);
     expect(
       (
         await asUser(
@@ -116,7 +117,7 @@ describe("Name/phone field access against local PostgreSQL", () => {
       db.exec("select public.register_field_contact('Visitor','3055550123');"),
     ).rejects.toThrow();
   });
-  it("isolates photo objects and rejects forged worker evidence paths", async () => {
+  it("shares property photos for reading and rejects forged worker evidence paths", async () => {
     const ownPath = `${workspace}/${userA}/visit-a/abc`;
     await asUser(
       userA,
@@ -124,7 +125,8 @@ describe("Name/phone field access against local PostgreSQL", () => {
     );
     expect(
       (await asUser(userB, "select name from storage.objects;"))[0].rows,
-    ).toEqual([]);
+    ).toEqual([{ name: ownPath }]);
+    expect((await asUser(userB, `update storage.objects set name='changed' where name='${ownPath}' returning name;`))[0].rows).toEqual([]);
     const payload = {
       photos: [{ original: { path: ownPath }, model: { path: ownPath } }],
     };
@@ -135,7 +137,7 @@ describe("Name/phone field access against local PostgreSQL", () => {
       ),
     ).rejects.toThrow("Invalid photo path");
   });
-  it("holds Spanish reports until English is ready, isolates PDFs and keeps one outbox job", async () => {
+  it("holds Spanish reports until English is ready, shares PDFs and keeps one outbox job", async () => {
     const payload = {
       photos: [],
       language: "es",
@@ -164,7 +166,7 @@ describe("Name/phone field access against local PostgreSQL", () => {
     ).toHaveLength(1);
     expect(
       (await asUser(userB, "select id from public.report_deliveries;"))[0].rows,
-    ).toEqual([]);
+    ).toHaveLength(1);
     await db.exec(
       `reset role; update public.report_deliveries set pdf_path='${workspace}/report-a.pdf'; insert into storage.objects(bucket_id,name) values('walkthrough-reports','${workspace}/report-a.pdf');`,
     );
@@ -183,7 +185,7 @@ describe("Name/phone field access against local PostgreSQL", () => {
           "select name from storage.objects where bucket_id='walkthrough-reports';",
         )
       )[0].rows,
-    ).toEqual([]);
+    ).toHaveLength(1);
     expect(
       (
         await asUser(
@@ -195,6 +197,14 @@ describe("Name/phone field access against local PostgreSQL", () => {
     await expect(
       asUser(userA, "select * from public.claim_report_delivery(null);"),
     ).rejects.toThrow();
+  });
+  it("keeps storage private and denies users who have not entered the workspace", async () => {
+    await db.exec("reset role;");
+    expect((await db.query("select public from storage.buckets where id in ('walkthrough-media','walkthrough-reports')")).rows).toEqual([{ public: false }, { public: false }]);
+    const result = await asUser(outsider, "select id from public.walkthroughs; select name from storage.objects; select id from public.report_deliveries;");
+    expect(result.map((table) => table.rows)).toEqual([[], [], []]);
+    await db.exec(`reset role; insert into storage.objects(bucket_id,name) values('walkthrough-media','99999999-9999-4999-8999-999999999999/other/file');`);
+    expect((await asUser(userA, "select name from storage.objects where name like '99999999%';"))[0].rows).toEqual([]);
   });
   it("caps paid processing per anonymous session without allowing direct quota resets", async () => {
     for (let i = 0; i < 20; i++)

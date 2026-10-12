@@ -20,7 +20,8 @@ export default function FieldGate(props: Props) {
   const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState("");
   const [checking, setChecking] = useState(true);
-  // Restore only this browser's session. A typed phone number never claims another person's records.
+  // Restore this browser's write identity. Shared property reports are readable
+  // by everyone in the workspace; a typed phone never claims another identity.
   useEffect(() => {
     let alive = true;
     async function restore() {
@@ -242,6 +243,9 @@ export default function FieldGate(props: Props) {
               {t(
                 "Your contact details are included with your report. No password or verification code.",
               )}
+            </p>
+            <p className="small muted">
+              {t("Everyone who enters can view the shared reports for each property.")}
             </p>
           </form>
         )}

@@ -123,17 +123,24 @@ export function canEditSession(access: WorkspaceAccess, session: Session) {
 export async function listCloudSessions(
   access: WorkspaceAccess,
 ): Promise<Session[]> {
-  const { data, error } = await access.client
-    .from("walkthroughs")
-    .select("*")
-    .eq("workspace_id", access.workspaceId)
-    .order("started_at", { ascending: false })
-    .limit(100);
-  if (error)
-    throw new Error(
-      "Could not load Rockwood’s shared visits. Check your connection and refresh.",
-    );
-  return (data ?? []).map((row) => rowToSession(cloudRowSchema.parse(row)));
+  const sessions: Session[] = [];
+  const pageSize = 100;
+  for (let offset = 0; ; offset += pageSize) {
+    const { data, error } = await access.client
+      .from("walkthroughs")
+      .select("*")
+      .eq("workspace_id", access.workspaceId)
+      .order("started_at", { ascending: false })
+      .order("id", { ascending: true })
+      .range(offset, offset + pageSize - 1);
+    if (error)
+      throw new Error(
+        "Could not load Rockwood’s shared visits. Check your connection and refresh.",
+      );
+    const rows = data ?? [];
+    sessions.push(...rows.map((row) => rowToSession(cloudRowSchema.parse(row))));
+    if (rows.length < pageSize) return sessions;
+  }
 }
 function checkPath(access: WorkspaceAccess, path: string) {
   if (!path.startsWith(`${access.workspaceId}/`) || path.includes(".."))
