@@ -1,15 +1,15 @@
 import type { Metadata, Viewport } from "next";
 import "./globals.css";
 export const metadata: Metadata = {
-  title: "Walkthrough · Rockwood Development",
-  description: "Capture the details. Leave with a clear plan.",
+  title: "Rockwood Cam",
+  description: "Site photos, notes and reports for Rockwood.",
   robots: { index: false, follow: false },
 };
 export const viewport: Viewport = {
   width: "device-width",
   initialScale: 1,
   viewportFit: "cover",
-  themeColor: "#F1EEE7",
+  themeColor: "#141414",
 };
 export default function RootLayout({
   children,

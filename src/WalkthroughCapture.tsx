@@ -8,7 +8,7 @@ import {
   Check,
   Camera,
   CameraOff,
-  CircleHelp,
+  FileText,
 } from "lucide-react";
 import {
   type Project,
@@ -75,22 +75,33 @@ export default function WalkthroughCapture({
     setTaking(true);
     try {
       await engine.current?.photo(area);
-      setMessage("Photo captured. Audio continues recording.");
+      setMessage("Photo added.");
     } catch (e) {
       setMessage((e as Error).message);
     } finally {
       setTaking(false);
     }
   }
+  function usePhotosAndNotes() {
+    const recorder = engine.current;
+    const current = recorder?.session ?? session;
+    // Stop before navigation so a late camera permission response releases
+    // its tracks without starting a recording after the visitor has left.
+    recorder?.dispose();
+    callbacks.current.fallback({
+      ...current,
+      status: "saved",
+      error: undefined,
+    });
+  }
   const activePhoto = session.photos.find((p) => p.id === selected);
   return (
     <main className="capture-page">
       <div className="page-heading compact">
         <div>
-          <p className="eyebrow">{t("WALKTHROUGH IN PROGRESS")}</p>
           <h1>{project.name}</h1>
         </div>
-        <span className="sample-label">{t("Sample project")}</span>
+        <span className="capture-limit">{t("5 min max")}</span>
       </div>
       <div className="capture-layout">
         <section className="capture-main">
@@ -106,19 +117,22 @@ export default function WalkthroughCapture({
               <span
                 className={`recording-status ${state === "recording" ? "is-recording" : ""}`}
               >
-                <i />
+                <Mic size={18} aria-hidden />
                 {state === "recording"
-                  ? t("AUDIO REC")
+                  ? t("Recording")
                   : state === "paused"
-                    ? t("PAUSED")
+                    ? t("Paused")
                     : state === "starting"
-                      ? t("CONNECTING")
+                      ? t("Connecting…")
                       : state === "finishing"
-                        ? t("SAVING")
-                        : t("UNAVAILABLE")}
+                        ? t("Saving…")
+                        : t("Unavailable")}
                 <b>{formatTime(seconds)}</b>
               </span>
-              <span className="viewfinder-note">{t("STILLS ONLY")}</span>
+              <span className="viewfinder-note">
+                <Camera size={18} aria-hidden />
+                {session.photos.length}/{LIMITS.photos}
+              </span>
             </div>
             {["starting", "error"].includes(state) && (
               <div className="camera-placeholder">
@@ -129,22 +143,18 @@ export default function WalkthroughCapture({
                 )}
                 <h2>
                   {state === "starting"
-                    ? t("Opening your camera")
+                    ? t("Opening camera…")
                     : t("Camera unavailable")}
                 </h2>
                 <p>
                   {state === "starting"
-                    ? t("Allow camera and microphone access to begin.")
-                    : t(
-                        "Your visit can still be documented with photos and notes.",
-                      )}
+                    ? t("Allow camera and microphone access.")
+                    : t("Add photos and notes instead.")}
                 </p>
               </div>
             )}
             <div className="viewfinder-bottom">
-              <span>
-                {area === GENERAL ? t("Choose an area when ready") : t(area)}
-              </span>
+              <span>{t(area)}</span>
               <div
                 className="audio-level"
                 aria-label={t("Microphone level {level} percent", {
@@ -164,58 +174,46 @@ export default function WalkthroughCapture({
               </div>
             </div>
           </div>
-          <div className="recording-explainer">
-            <Mic size={16} />
-            <span>
-              {state === "recording"
-                ? t("Audio recording. Transcript prepared when you finish.")
-                : state === "paused"
-                  ? t("Audio paused. Resume when you are ready.")
-                  : state === "starting"
-                    ? t("Waiting for camera and microphone permission.")
-                    : state === "finishing"
-                      ? t("Saving your complete recording and photos.")
-                      : t(
-                          "No recording is running. Use photos and typed notes.",
-                        )}
-            </span>
-          </div>
           {message && (
             <Notice tone={state === "error" ? "warning" : "neutral"}>
               {t(message)}
             </Notice>
           )}
-          {state === "error" ? (
-            <div className="button-row">
+          {state === "error" || state === "starting" ? (
+            <div className="button-row capture-fallback">
+              {state === "error" && (
+                <button
+                  className="button primary"
+                  onClick={() => setAttempt((a) => a + 1)}
+                >
+                  <Camera size={22} aria-hidden />
+                  {t("Retry camera")}
+                </button>
+              )}
               <button
-                className="button primary"
-                onClick={() => setAttempt((a) => a + 1)}
+                className={`button ${state === "starting" ? "primary" : ""}`}
+                onClick={usePhotosAndNotes}
               >
-                {t("Retry camera & microphone")}
-              </button>
-              <button
-                className="button"
-                onClick={() =>
-                  fallback({ ...session, status: "saved", error: undefined })
-                }
-              >
-                {t("Use photos & typed notes")}
+                <FileText size={22} aria-hidden />
+                {t("Photos & notes")}
               </button>
             </div>
           ) : (
             <div className="capture-controls">
               <button
                 className="capture-secondary"
-                disabled={
-                  state === "starting" || state === "finishing" || taking
-                }
+                disabled={state === "finishing" || taking}
                 onClick={() =>
                   state === "paused"
                     ? engine.current?.resume()
                     : engine.current?.pause()
                 }
               >
-                {state === "paused" ? <Play size={23} /> : <Pause size={23} />}
+                {state === "paused" ? (
+                  <Play size={26} aria-hidden />
+                ) : (
+                  <Pause size={26} aria-hidden />
+                )}
                 <span>{state === "paused" ? t("Resume") : t("Pause")}</span>
               </button>
               <button
@@ -229,17 +227,18 @@ export default function WalkthroughCapture({
                 onClick={takePhoto}
               >
                 <span>
-                  <Camera size={29} />
+                  <Camera size={30} aria-hidden />
+                  <strong className="shutter-label">
+                    {taking ? t("Taking…") : t("Take photo")}
+                  </strong>
                 </span>
               </button>
               <button
                 className="capture-done"
-                disabled={
-                  state === "starting" || state === "finishing" || taking
-                }
+                disabled={state === "finishing" || taking}
                 onClick={() => engine.current?.finish()}
               >
-                <Check size={23} />
+                <Check size={26} aria-hidden />
                 <span>{state === "finishing" ? t("Saving…") : t("Done")}</span>
               </button>
             </div>
@@ -247,8 +246,7 @@ export default function WalkthroughCapture({
         </section>
         <aside className="capture-sidebar">
           <label className="area-label">
-            {t("Current area")}
-            <span>{t("Optional")}</span>
+            {t("Area")}
             <select value={area} onChange={(e) => setArea(e.target.value)}>
               <option value={GENERAL}>{t(GENERAL)}</option>
               {project.areas.map((a) => (
@@ -259,47 +257,35 @@ export default function WalkthroughCapture({
             </select>
           </label>
           <div className="section-rule">
-            <h2>{t("Captured photos")}</h2>
+            <h2>{t("Photos")}</h2>
             <span>
               {session.photos.length} / {LIMITS.photos}
             </span>
           </div>
           <PhotoStrip photos={session.photos} onSelect={setSelected} />
-          <label>
-            {t("Walkthrough notes")}
-            <span className="muted">{t("Optional")}</span>
+          <details className="capture-notes">
+            <summary>
+              <FileText size={22} aria-hidden /> {t("Add notes")}
+            </summary>
             <textarea
-              rows={4}
+              aria-label={t("Walkthrough notes")}
+              rows={3}
               maxLength={8000}
-              placeholder={t(
-                "A detail to remember, or a question to follow up…",
-              )}
+              placeholder={t("What needs attention?")}
               defaultValue={session.notes}
               onChange={(e) => engine.current?.setNotes(e.target.value)}
             />
-          </label>
-          <div className="capture-tip">
-            <CircleHelp size={18} />
-            <div>
-              <strong>{t("Walk. Talk. Capture the details.")}</strong>
-              <p>
-                {t(
-                  "Say the room and describe what you see. Take a photo when it helps explain an observation.",
-                )}
-              </p>
-              <p>
-                {t(
-                  "Keep this page open while recording. Prototype limit: 5 minutes, 12 photos.",
-                )}
-              </p>
-            </div>
-          </div>
+          </details>
+          <p className="capture-reminder">
+            {t("Keep this page open while recording.")}
+          </p>
         </aside>
       </div>
       {activePhoto && (
         <PhotoDialog
           photo={activePhoto}
           project={project}
+          readOnly={state === "starting" || state === "finishing" || taking}
           close={() => setSelected(undefined)}
           save={(p) => engine.current?.editPhoto(p)}
           remove={() => engine.current?.removePhoto(activePhoto.id)}

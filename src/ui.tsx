@@ -4,7 +4,6 @@ import { useEffect, useState, useRef, type ReactNode } from "react";
 import {
   X,
   ChevronLeft,
-  HardDrive,
   ImagePlus,
   Trash2,
   Download,
@@ -39,11 +38,15 @@ export function Logo({ available = true }: { available?: boolean }) {
     </div>
   );
 }
-export function Header({
-  logoAvailable,
-  home,
-  storageLabel = "Saved on this device",
-}: {
+export function CamBrand() {
+  return (
+    <span className="cam-brand" aria-label="Rockwood Cam">
+      <img src="/brand/rockwood-cam-mark.png" width="64" height="64" alt="" />
+      <span className="cam-wordmark">ROCKWOOD<span>CAM</span></span>
+    </span>
+  );
+}
+export function Header({ home }: {
   logoAvailable: boolean;
   home: () => void;
   storageLabel?: string;
@@ -51,19 +54,10 @@ export function Header({
   const { t } = useLanguage();
   return (
     <header className="app-header no-print">
-      <button
-        className="brand-button"
-        onClick={home}
-        aria-label={t("Back to projects")}
-      >
-        <Logo available={logoAvailable} />
+      <button className="brand-button" onClick={home} aria-label={t("Back to projects")}>
+        <CamBrand />
       </button>
-      <div className="header-divider" />
-      <span className="app-descriptor">{t("Walkthroughs")}</span>
       <LanguageToggle />
-      <span className="device-note">
-        <HardDrive size={14} /> {t(storageLabel)}
-      </span>
     </header>
   );
 }
@@ -181,7 +175,7 @@ export function PhotoStrip({
       ) : (
         <div className="photo-empty">
           <ImagePlus size={21} />
-          <span>{t("Your site photos will appear here.")}</span>
+          <span>{t("No photos yet")}</span>
         </div>
       )}
     </div>
@@ -193,12 +187,14 @@ export function PhotoDialog({
   save,
   remove,
   close,
+  readOnly = false,
 }: {
   photo: Photo;
   project: Project;
   save: (p: Photo) => void;
   remove: () => void;
   close: () => void;
+  readOnly?: boolean;
 }) {
   const { t, locale } = useLanguage();
   const [draft, setDraft] = useState(photo);
@@ -215,6 +211,7 @@ export function PhotoDialog({
         {t("Area")}
         <select
           value={draft.area}
+          disabled={readOnly}
           onChange={(e) => setDraft({ ...draft, area: e.target.value })}
         >
           <option value={GENERAL}>{t(GENERAL)}</option>
@@ -229,6 +226,7 @@ export function PhotoDialog({
         {t("Optional note")}
         <textarea
           value={draft.note}
+          readOnly={readOnly}
           maxLength={4000}
           rows={3}
           placeholder={t("What should this photo help document?")}
@@ -236,7 +234,7 @@ export function PhotoDialog({
         />
       </label>
       <div className="button-row">
-        <button
+        {!readOnly && <button
           className="button primary"
           onClick={() => {
             save(draft);
@@ -244,7 +242,7 @@ export function PhotoDialog({
           }}
         >
           {t("Save photo details")}
-        </button>
+        </button>}
         <button
           className="button"
           onClick={() => downloadBlob(draft.blob, `photo-${draft.id}.jpg`)}
@@ -252,8 +250,8 @@ export function PhotoDialog({
           <Download size={16} />
           {t("Download")}
         </button>
-        <button
-          className="text-button danger"
+        {!readOnly && <button
+          className="button danger"
           onClick={() => {
             remove();
             close();
@@ -261,7 +259,7 @@ export function PhotoDialog({
         >
           <Trash2 size={16} />
           {t("Remove photo")}
-        </button>
+        </button>}
       </div>
     </Modal>
   );
