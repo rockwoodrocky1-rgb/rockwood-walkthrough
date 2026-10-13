@@ -1,6 +1,7 @@
 "use client";
 import { useLanguage } from "./i18n";
 import { useEffect, useState } from "react";
+import { Download, Mail, RefreshCw } from "lucide-react";
 import type { WorkspaceAccess } from "./cloud";
 import type { Session } from "../shared/model";
 type Status = {
@@ -88,41 +89,38 @@ export default function ReportDelivery({
   const label =
     error ||
     (session.cloud?.pending
-      ? "Report is uploading. Email is queued after it saves."
+      ? "Saving report…"
       : !status
-        ? "Checking report delivery…"
+        ? "Preparing PDF…"
         : !status.configured
           ? status.pdfUrl
-            ? "PDF saved to Rockwood. Automatic Gmail sending is not connected for this test."
-            : "Report saved. Preparing the PDF; automatic Gmail sending is not connected for this test."
+            ? "PDF ready. Automatic email is not connected."
+            : "Report saved. Preparing PDF…"
           : sent
-            ? "PDF submitted for email to rockwoodrocky1@gmail.com."
+            ? "Email submitted to rockwoodrocky1@gmail.com."
             : status.job?.status === "needs_attention"
-              ? "Email needs an administrator review. Your report is saved."
+              ? "Report saved. Email needs administrator review."
               : status.job?.status === "cancelled"
-                ? "Email cancelled because the visit was archived."
-                : "Preparing the photo PDF and email to rockwoodrocky1@gmail.com…");
+                ? "Visit archived. Email cancelled."
+                : "Preparing PDF and email…");
   return (
     <aside className="report-delivery no-print" aria-live="polite">
       <div>
-        <strong>{t("Report delivery")}</strong>
+        <strong>{t("PDF & email")}</strong>
         <p>{t(label)}</p>
         {sent && (
-          <small>
-            {t(
-              "The emailed PDF is the original report. This page includes saved edits.",
-            )}
-          </small>
+          <p>{t("The PDF is the original version. This page shows saved edits.")}</p>
         )}
       </div>
-      <div className="button-row">
+      <div className="button-row report-delivery-actions">
         {status?.pdfUrl && (
           <a
-            className="button"
+            className="button primary"
             href={status.pdfUrl}
             target="_blank"
             rel="noreferrer"
           >
+            <Download size={22} />
             {t("Download PDF")}
           </a>
         )}
@@ -137,7 +135,8 @@ export default function ReportDelivery({
               location.href = `mailto:rockwoodrocky1@gmail.com?subject=${encodeURIComponent(`Rockwood walkthrough - ${title}`)}&body=${encodeURIComponent(`Report and photos: ${link}\n\nThis read-only link opens without signing in. Share it only with the intended reviewers. To include the PDF attachment, download it from the report and attach it to this email.`)}`;
             }}
           >
-            {t("Draft email with report link")}
+            <Mail size={22} />
+            {t("Draft email")}
           </button>
         )}
         {!readOnly &&
@@ -149,6 +148,7 @@ export default function ReportDelivery({
               onClick={() => void retry()}
               disabled={busy}
             >
+              <RefreshCw size={22} />
               {busy ? t("Checking…") : t("Check delivery")}
             </button>
           )}

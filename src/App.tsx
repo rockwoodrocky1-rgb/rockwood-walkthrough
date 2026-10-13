@@ -8,9 +8,7 @@ import {
   ChevronRight,
   ClipboardList,
   FileText,
-  HardDrive,
-  Mic,
-  ShieldCheck,
+  ImagePlus,
   Trash2,
 } from "lucide-react";
 import {
@@ -417,7 +415,7 @@ export default function App({
         home={home}
         storageLabel={cloud ? cloud.workspaceName : undefined}
       />
-      {(cloud || participant) && (
+      {(cloud || participant) && ["projects", "project"].includes(screen) && (
         <div className="workspace-bar no-print">
           <span>
             {cloud?.participant?.name ?? participant?.name ?? cloud?.email}
@@ -451,14 +449,9 @@ export default function App({
                     ? t("Saved to Rockwood")
                     : t("Ready to save to Rockwood")}
             </strong>
-            <p>
-              {uploading === active.id
-                ? t("Keep this page open until the upload completes.")
-                : t(active.cloud?.error ||
-                  (active.cloud?.savedAt && !active.cloud.pending
-                    ? "Photos, audio, notes, and reports are saved to Rockwood."
-                    : "A recovery copy stays in this browser until the upload completes."))}
-            </p>
+            {(uploading === active.id || active.cloud?.pending) && <p>
+              {t(active.cloud?.error || "Keep this page open until the upload completes.")}
+            </p>}
             {!uploading && active.cloud?.pending && (
               <button
                 className="button"
@@ -490,14 +483,8 @@ export default function App({
       {screen === "projects" && (
         <main className="page projects-page">
           <div className="page-heading home-heading">
-            <div>
-              <p className="eyebrow">{t("THE SITE VISIT, DOCUMENTED.")}</p>
-              <h1>{t("Your projects")}</h1>
-              <p>{t("Choose a project to document your next site visit.")}</p>
-            </div>
-            <span className="prototype-label">
-              <i /> {cloud ? t("SHARED TEST WORKSPACE") : t("LOCAL PROTOTYPE")}
-            </span>
+            <h1>{t("Choose project")}</h1>
+            <span className="test-badge">{t("Test projects")}</span>
           </div>
           <div className="project-grid">
             {projects.map((p) => (
@@ -515,19 +502,13 @@ export default function App({
                       { project: p.name },
                     )}
                   />
-                  <span className="sample-label">{t("Sample project")}</span>
-                  <span className="image-note">{t("ILLUSTRATIVE IMAGE")}</span>
+
                 </div>
                 <div className="project-card-content">
-                  <span className="eyebrow">
-                    {p.number} / {t(p.type)}
-                  </span>
                   <h2>{p.name}</h2>
                   <p>{t(p.stage)}</p>
                   <div className="project-card-bottom">
                     <span>
-                      {p.areas.length} {t("areas")}{" "}
-                      <span className="dot-separator">·</span>{" "}
                       {
                         sessions.filter((s) => s.projectId === p.id && s.report)
                           .length
@@ -542,93 +523,17 @@ export default function App({
               </button>
             ))}
           </div>
-          <div className="how-it-works">
-            <div className="how-intro">
-              <p className="eyebrow">{t("LESS ADMIN. MORE CLARITY.")}</p>
-              <h2>
-                {t("A site visit.")}
-                <br />
-                {t("A clear record.")}
-              </h2>
-            </div>
-            <div className="how-step">
-              <span className="step-icon">
-                <Mic size={22} />
-              </span>
-              <span className="eyebrow">{t("01 / WALK & TALK")}</span>
-              <p>
-                {t("Narrate what you see.")}
-                <br />
-                {t("Keep your attention on the site.")}
-              </p>
-            </div>
-            <div className="how-step">
-              <span className="step-icon">
-                <Camera size={22} />
-              </span>
-              <span className="eyebrow">{t("02 / CAPTURE DETAILS")}</span>
-              <p>
-                {t("Take a photo when it matters.")}
-                <br />
-                {t("Your narration keeps recording.")}
-              </p>
-            </div>
-            <div className="how-step">
-              <span className="step-icon">
-                <ClipboardList size={22} />
-              </span>
-              <span className="eyebrow">{t("03 / LEAVE WITH A PLAN")}</span>
-              <p>
-                {t("Review the visit, organize actions,")}
-                <br />
-                {t("and print a report worth sharing.")}
-              </p>
-            </div>
-          </div>
-          <div className="home-footnote">
-            <p>
-              {t(
-                "These three projects are fictional demonstrations, not verified Rockwood work.",
-              )}
-            </p>
-            <button
-              className="text-button"
-              onClick={() => {
-                const p = projects[0];
-                const saved = sessions.find((s) => s.id === `sample-${p.id}`);
-                if (saved && cloud) void openSession(saved, p);
-                else navigate("report", p, saved || createSample(p));
-              }}
-            >
-              {t("Explore a sample report")}
-              <ChevronRight size={16} />
-            </button>
-          </div>
+
         </main>
       )}
       {screen === "project" && (
         <main className="page">
           <Back onClick={() => navigate("projects")}>{t("All projects")}</Back>
-          <div className="project-overview">
+          <div className="project-overview field-project">
             <div>
-              <p className="eyebrow">
-                {t(project.type)} <span className="dot-separator">/</span>{" "}
-                {t(project.stage)}
-              </p>
               <h1>{project.name}</h1>
-              <p className="sample-description">
-                <span className="sample-label">{t("Sample project")}</span>
-                {t(
-                  "A fictional project for exploring your walkthrough workflow.",
-                )}
-              </p>
-              <div className="area-list">
-                <span className="eyebrow">{t("PROJECT AREAS")}</span>
-                {project.areas.map((a) => (
-                  <span key={a}>{t(a)}</span>
-                ))}
-              </div>
-              <div className="button-row">
+              <div className="project-actions">
+
                 <button
                   className="button primary large"
                   onClick={() => void start()}
@@ -638,13 +543,8 @@ export default function App({
                   {t("Start walkthrough")}
                   <ArrowRight size={17} />
                 </button>
-                <button className="button large" onClick={sample}>
-                  <FileText size={18} />
-                  {t("View sample report")}
-                </button>
-              </div>
               <button
-                className="text-button upload-fallback"
+                className="button large upload-fallback"
                 disabled={cloud?.role === "viewer"}
                 onClick={() => {
                   const s: Session = {
@@ -663,33 +563,16 @@ export default function App({
                   void update(s).catch((e) => setError(e.message));
                 }}
               >
-                {t("Prefer to upload photos and type notes?")}
+                <ImagePlus size={22} /> {t("Add photos / notes")}
               </button>
-              <p className="muted small">
-                {t(
-                  "5 minutes · 12 photos per visit. Camera and microphone access requested after Start.",
-                )}
-              </p>
-            </div>
-            <div className="overview-image">
-              <img
-                src={project.image}
-                alt={t(
-                  "Illustrative architecture, not an actual Rockwood project",
-                )}
-              />
-              <span>{t("ILLUSTRATIVE IMAGE")}</span>
+              </div>
+              <p className="capture-limit">{t("5 min · 12 photos per visit")}</p>
             </div>
           </div>
           <section className="saved-section">
             <div className="section-rule">
-              <h2>{t("Walkthroughs & reports")}</h2>
-              <span>
-                <HardDrive size={14} />{" "}
-                {cloud
-                  ? t("Shared property history")
-                  : t("Saved on this device")}
-              </span>
+              <h2>{t("Reports & visits")}</h2>
+              <span className="visit-count">{projectSessions.length}</span>
             </div>
             {projectSessions.length ? (
               <div className="saved-list">
@@ -704,12 +587,14 @@ export default function App({
                         <strong>
                           {s.report?.mode === "sample"
                             ? t("Sample walkthrough")
-                            : new Date(s.startedAt).toLocaleDateString(locale, {
-                                month: "long",
+                            : new Date(s.startedAt).toLocaleString(locale, {
+                                month: "short",
                                 day: "numeric",
-                                year: "numeric",
+                                hour: "numeric",
+                                minute: "2-digit",
                               })}
                         </strong>
+                        {s.participant?.name && <span className="visit-author">{s.participant.name}</span>}
                         <span>
                           {s.report
                             ? t(
@@ -717,8 +602,8 @@ export default function App({
                                   ? "Reviewed report"
                                   : "Draft report",
                               )
-                            : t("Captured visit · ready to process")}{" "}
-                          · {s.photos.length} {t("photos")}{" "}
+                            : t("Visit saved")}{" "}
+                          · {s.photos.length} {t(s.photos.length === 1 ? "photo" : "photos")}{" "}
                           {s.status === "interrupted" ? t("· Interrupted") : ""}
                           {cloud && s.cloud?.pending
                             ? t(" · Upload pending")
@@ -727,7 +612,7 @@ export default function App({
                       </div>
                       <ChevronRight size={19} />
                     </button>
-                    <button
+                    {(!cloud || canEditSession(cloud, s)) && <button
                       className="icon-button"
                       aria-label={
                         cloud
@@ -743,22 +628,15 @@ export default function App({
                       }
                       onClick={() => void remove(s)}
                     >
-                      <Trash2 size={17} />
-                    </button>
+                      <Trash2 size={20} />
+                    </button>}
                   </div>
                 ))}
               </div>
             ) : (
               <div className="empty-state">
                 <ClipboardList size={30} />
-                <h3>{t("Your next visit starts here.")}</h3>
-                <p>
-                  {t(
-                    "Saved walkthroughs and reviewed reports will appear here.",
-                  )}
-                  <br />
-                  {t("Start a visit, or explore the sample report above.")}
-                </p>
+                <h3>{t("No visits yet")}</h3>
               </div>
             )}
           </section>
@@ -807,14 +685,13 @@ export default function App({
           source={() => navigate("source")}
         />
       )}
-      <footer className="app-footer no-print">
+      {["projects", "project"].includes(screen) && <footer className="app-footer no-print">
         <span>
-          ROCKWOOD <span className="footer-slash">/</span>
-          {t("WALKTHROUGHS")}
+          ROCKWOOD CAM
         </span>
         <div>
           <button onClick={() => setAbout(true)}>
-            {t("About this prototype")}
+            {t("Help")}
           </button>
           {!cloud && (
             <button
@@ -825,60 +702,18 @@ export default function App({
             </button>
           )}
         </div>
-      </footer>
+      </footer>}
       {about && (
         <Modal
-          title={t("A simple record of the site.")}
+          title={t("Help")}
           close={() => setAbout(false)}
         >
-          <p>
-            {t(
-              "Record audio, capture individual photos, and organize the visit into an editable report. The camera provides a live viewfinder; video is never recorded.",
-            )}
-          </p>
-          <div className="about-section">
-            <HardDrive size={20} />
-            <div>
-              <h3>
-                {cloud ? t("Saved to Rockwood") : t("Saved on this device")}
-              </h3>
-              <p>
-                {cloud ? (
-                  t("Completed visits upload to Rockwood. Everyone who enters can open the shared reports for each property. This browser session can edit its own visits.")
-                ) : (
-                  <>
-                    {t(
-                      "Sessions, audio, photos, and reports use this browser’s IndexedDB storage. Clearing browser data removes them. This is not cloud backup or offline synchronization.",
-                    )}
-                  </>
-                )}
-              </p>
-            </div>
-          </div>
-          <div className="about-section">
-            <ShieldCheck size={20} />
-            <div>
-              <h3>{t("Sample and Live AI are separate")}</h3>
-              <p>
-                {t(
-                  "Samples are fictional. Real processing requires a server API key and explicit Live mode configuration. Live mode sends content to OpenAI. Use non-sensitive test material in a trusted environment.",
-                )}
-              </p>
-            </div>
-          </div>
-          <p className="small muted">
-            {t(
-              "Five-minute and twelve-photo limits apply. Keep the page open during recording. Reviewed is a local status, not an inspection approval.",
-            )}{" "}
-            <a
-              href="/images/source-credits.json"
-              target="_blank"
-              rel="noreferrer"
-            >
-              {t("Illustrative image credits")}
-            </a>
-            .
-          </p>
+          <p>{t("Record your notes, take photos, then create a report.")}</p>
+          <p>{t("5 min · 12 photos per visit")}</p>
+          <p>{cloud ? t("Everyone on the team can view reports. You can edit your own visits.") : t("Saved in this browser only. Clearing browser data deletes this visit.")}</p>
+          <p>{t("Test projects and sample reports are fictional.")}</p>
+          <button className="button" onClick={() => { setAbout(false); sample(); }}>{t("Sample report")}</button>
+          <a className="text-button" href="/images/source-credits.json" target="_blank" rel="noreferrer">{t("Image credits")}</a>
         </Modal>
       )}
       {reset && (

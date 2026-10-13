@@ -194,11 +194,7 @@ export default function FieldGate(props: Props) {
         storageLabel="Site walkthrough"
       />
       <main className="page auth-page field-entry">
-        <p className="eyebrow">ROCKWOOD DEVELOPMENT</p>
-        <h1>{t("Let’s start your walkthrough.")}</h1>
-        <p>
-          {t("Enter your name and phone number, then choose your project.")}
-        </p>
+        <h1>{t("Start your visit")}</h1>
         {checking ? (
           <Notice>{t("Opening your session…")}</Notice>
         ) : (
@@ -239,13 +235,8 @@ export default function FieldGate(props: Props) {
             <button className="button primary" disabled={busy}>
               {t(busy ? "Opening…" : "Continue")}
             </button>
-            <p className="small muted">
-              {t(
-                "Your contact details are included with your report. No password or verification code.",
-              )}
-            </p>
-            <p className="small muted">
-              {t("Everyone who enters can view the shared reports for each property.")}
+            <p className="entry-access-note">
+              {t("Your name appears on reports. Everyone on the team can view them.")}
             </p>
           </form>
         )}

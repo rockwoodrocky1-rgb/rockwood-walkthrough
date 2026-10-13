@@ -63,29 +63,21 @@ function SharedContent() {
           <Notice tone="warning">{t(error)}</Notice>
         </main>
       ) : saved ? (
-        <>
-          {saved.pdfUrl && (
-            <div className="page compact no-print">
-              <a className="button" href={saved.pdfUrl} rel="noreferrer">
-                {t("Download PDF")}
-              </a>
-            </div>
-          )}
-          <ReportEditor
-            project={saved.project}
-            initial={saved.session}
-            logoAvailable
-            cloudEnabled
-            readOnly
-            save={async () => {
-              throw new Error("Read-only report");
-            }}
-            back={() => {
-              router.push("/");
-            }}
-            source={() => {}}
-          />
-        </>
+        <ReportEditor
+          project={saved.project}
+          initial={saved.session}
+          logoAvailable
+          cloudEnabled
+          readOnly
+          pdfUrl={saved.pdfUrl}
+          save={async () => {
+            throw new Error("Read-only report");
+          }}
+          back={() => {
+            router.push("/");
+          }}
+          source={() => {}}
+        />
       ) : (
         <main className="page">
           <Notice>{t("Opening saved visit…")}</Notice>

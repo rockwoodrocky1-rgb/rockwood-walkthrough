@@ -15,6 +15,7 @@ import {
   Pencil,
   ChevronDown,
   Link2,
+  Download,
 } from "lucide-react";
 import {
   GENERAL,
@@ -88,6 +89,7 @@ export default function ReportEditor({
   cloudEnabled = false,
   readOnly = false,
   cloud,
+  pdfUrl,
 }: {
   initial: Session;
   project: Project;
@@ -98,6 +100,7 @@ export default function ReportEditor({
   cloudEnabled?: boolean;
   readOnly?: boolean;
   cloud?: WorkspaceAccess;
+  pdfUrl?: string | null;
 }) {
   const { t, language, locale } = useLanguage();
   const [report, setReport] = useState<Report>(initial.report!);
@@ -168,6 +171,7 @@ export default function ReportEditor({
       await save({ ...initial, report: next });
       setReport(next);
       setDirty(false);
+      setEditing(false);
       setMessage(
         reviewed
           ? cloudEnabled
@@ -242,24 +246,16 @@ export default function ReportEditor({
             item.noteIds.length >
           0 ? (
             <button
-              className="text-button evidence-toggle"
+              className="button evidence-toggle"
               onClick={() => setEvidence(isOpen ? undefined : item.id)}
+              aria-expanded={isOpen}
             >
-              <Link2 size={13} />
-              {item.photoIds.length > 0
-                ? t("{count} photo(s) · ", { count: item.photoIds.length })
-                : ""}
-              {item.transcriptSegmentIds.length
-                ? t("{count} transcript source(s)", {
-                    count: item.transcriptSegmentIds.length,
-                  })
-                : item.noteIds.length
-                  ? t("User notes")
-                  : t("Photo evidence")}
-              <ChevronDown size={13} />
+              <Link2 size={20} />
+              {isOpen ? t("Hide evidence") : t("View evidence")}
+              <ChevronDown size={20} />
             </button>
           ) : (
-            <span className="muted small">
+            <span className="muted">
               {t("No evidence linked · verify before sharing")}
             </span>
           )}
@@ -311,9 +307,7 @@ export default function ReportEditor({
       editing &&
       initial.photos.length > 0 && (
         <fieldset className="photo-picker no-print">
-          <legend>
-            {t("Associated photos · confirm content, not just timing")}
-          </legend>
+          <legend>{t("Link photos")}</legend>
           {initial.photos.map((p, i) => (
             <label key={p.id}>
               <input
@@ -347,22 +341,40 @@ export default function ReportEditor({
       <div className="report-topbar no-print">
         <Back onClick={() => leave(back)}>{t("Back to project")}</Back>
         <div className="button-row">
-          <button
-            className="button"
-            disabled={readOnly}
-            onClick={() => setEditing(!editing)}
-          >
-            <Pencil size={16} />
-            {editing ? t("Preview report") : t("Edit report")}
-          </button>
-          <button
-            className="button primary"
-            onClick={() => void persist()}
-            disabled={saving || readOnly}
-          >
-            <Save size={16} />
-            {saving ? t("Saving…") : t("Save report")}
-          </button>
+          {pdfUrl && (
+            <a
+              className="button primary"
+              href={pdfUrl}
+              target="_blank"
+              rel="noreferrer"
+            >
+              <Download size={22} />
+              {t("Download PDF")}
+            </a>
+          )}
+          {!readOnly && (
+            <>
+              <button
+                className="button"
+                disabled={saving}
+                aria-pressed={editing}
+                onClick={() => setEditing(!editing)}
+              >
+                <Pencil size={22} />
+                {editing ? t("Preview report") : t("Edit report")}
+              </button>
+              {(editing || dirty) && (
+                <button
+                  className="button primary"
+                  onClick={() => void persist()}
+                  disabled={saving || !dirty}
+                >
+                  <Save size={22} />
+                  {saving ? t("Saving…") : t("Save report")}
+                </button>
+              )}
+            </>
+          )}
         </div>
       </div>
       {message && (
@@ -370,21 +382,14 @@ export default function ReportEditor({
           <Notice>{t(message)}</Notice>
         </div>
       )}
-      <div className="global-notice no-print">
-        <Notice>
-          <strong>{t("English report")}</strong>
-          <p>
-            {t(
-              "Your original notes and audio stay in their original language. Saved reports and emails are in English.",
-            )}
-          </p>
-        </Notice>
-      </div>
-      {initial.participant && (
-        <div className="participant-summary">
-          <strong>{t("Submitted by")}</strong> {initial.participant.name} ·{" "}
-          {initial.participant.phone}
-        </div>
+      {(language === "es" || readOnly || dirty) && (
+        <p className="report-status no-print">
+          {[
+            language === "es" && t("English report"),
+            readOnly && t("Read only"),
+            dirty && t("Unsaved changes"),
+          ].filter(Boolean).join(" · ")}
+        </p>
       )}
       {cloud && initial.report?.mode !== "sample" && (
         <ReportDelivery access={cloud} session={initial} readOnly={readOnly} />
@@ -416,6 +421,12 @@ export default function ReportEditor({
           <p className="report-project">{project.name}</p>
           <span className="sample-label">{t("Fictional sample project")}</span>
         </div>
+        {initial.participant && (
+          <div className="participant-summary">
+            <strong>{t("Submitted by")}</strong> {initial.participant.name} ·{" "}
+            {initial.participant.phone}
+          </div>
+        )}
         <div className="report-meta">
           <div>
             <span>{t("VISIT DATE")}</span>
@@ -438,7 +449,7 @@ export default function ReportEditor({
             <span>{t("DURATION / PHOTOS")}</span>
             <strong>
               {formatTime(initial.duration)} / {initial.photos.length}{" "}
-              {t("photos")}
+              {t(initial.photos.length === 1 ? "photo" : "photos")}
             </strong>
             <small>
               {[
@@ -558,7 +569,7 @@ export default function ReportEditor({
                     {photoPicker(o, true)}
                     {editing && (
                       <button
-                        className="text-button danger"
+                        className="button danger"
                         onClick={() =>
                           change({
                             observations: report.observations.filter(
@@ -573,7 +584,7 @@ export default function ReportEditor({
                           })
                         }
                       >
-                        <Trash2 size={14} />
+                        <Trash2 size={20} />
                         {t("Remove observation")}
                       </button>
                     )}
@@ -604,7 +615,7 @@ export default function ReportEditor({
                 });
               }}
             >
-              <Plus size={16} />
+              <Plus size={20} />
               {t("Add observation")}
             </button>
           )}
@@ -655,22 +666,35 @@ export default function ReportEditor({
                     className={`action-item ${a.status === "done" ? "is-done" : ""}`}
                     key={a.id}
                   >
-                    <button
-                      className="task-check no-print"
-                      disabled={readOnly}
-                      aria-label={`${t(a.status === "done" ? "Reopen" : "Complete")}: ${a.task}`}
-                      onClick={() =>
-                        changeAction(a.id, {
-                          status: a.status === "done" ? "open" : "done",
-                        })
-                      }
-                    >
-                      {a.status === "done" ? (
-                        <CheckCircle2 size={22} />
-                      ) : (
-                        <Circle size={22} />
-                      )}
-                    </button>
+                    {!readOnly ? (
+                      <button
+                        className="task-check no-print"
+                        aria-label={`${t(a.status === "done" ? "Reopen" : "Complete")}: ${a.task}`}
+                        onClick={() =>
+                          changeAction(a.id, {
+                            status: a.status === "done" ? "open" : "done",
+                          })
+                        }
+                      >
+                        {a.status === "done" ? (
+                          <CheckCircle2 size={22} />
+                        ) : (
+                          <Circle size={22} />
+                        )}
+                      </button>
+                    ) : (
+                      <span
+                        className="task-check no-print"
+                        role="img"
+                        aria-label={t(a.status === "done" ? "Done" : "Open")}
+                      >
+                        {a.status === "done" ? (
+                          <CheckCircle2 size={22} />
+                        ) : (
+                          <Circle size={22} />
+                        )}
+                      </span>
+                    )}
                     <span className="print-only task-print-status">
                       [{a.status === "done" ? t("Done") : t("Open")}]
                     </span>
@@ -768,7 +792,7 @@ export default function ReportEditor({
                       {photoPicker(a, false)}
                       {editing && (
                         <button
-                          className="text-button danger"
+                          className="button danger"
                           onClick={() =>
                             change({
                               actionItems: report.actionItems.filter(
@@ -777,7 +801,7 @@ export default function ReportEditor({
                             })
                           }
                         >
-                          <Trash2 size={14} />
+                          <Trash2 size={20} />
                           {t("Remove action")}
                         </button>
                       )}
@@ -787,19 +811,20 @@ export default function ReportEditor({
               {!report.actionItems.some((a) => a.category === category) && (
                 <p className="muted">{t("None recorded.")}</p>
               )}
-              <button
-                className="text-button no-print"
-                disabled={readOnly}
-                onClick={() => addAction(category)}
-              >
-                <Plus size={16} />
-                {t("Add")}{" "}
-                {category === "question"
-                  ? t("question")
-                  : category === "next_step"
-                    ? t("next step")
-                    : t("task")}
-              </button>
+              {!readOnly && editing && (
+                <button
+                  className="button no-print"
+                  onClick={() => addAction(category)}
+                >
+                  <Plus size={20} />
+                  {t("Add")}{" "}
+                  {category === "question"
+                    ? t("question")
+                    : category === "next_step"
+                      ? t("next step")
+                      : t("task")}
+                </button>
+              )}
             </section>
           ),
         )}
@@ -904,22 +929,12 @@ export default function ReportEditor({
         </footer>
       </article>
       <div className="report-actions no-print">
-        <div>
-          <strong>
-            {dirty
-              ? t("You have unsaved changes.")
-              : t("Your report, ready for review.")}
-          </strong>
-          <p>
-            {t(
-              "Review confirms your local edits. It is not an inspection approval.",
-            )}
-          </p>
-        </div>
+        {dirty && <p role="status">{t("Unsaved changes")}</p>}
         <div className="button-row">
           {report.mode !== "sample" && !readOnly && (
             <button className="button" onClick={() => leave(source)}>
-              {t("View captured source")}
+              <FileText size={22} />
+              {t("Photos & notes")}
             </button>
           )}
           <button
@@ -931,23 +946,20 @@ export default function ReportEditor({
               );
             }}
           >
-            <Printer size={16} />
-            {t("Print / Save as PDF")}
+            <Printer size={22} />
+            {t("Print report")}
           </button>
-          <button
-            className="button primary"
-            onClick={() => void persist(true)}
-            disabled={saving || readOnly}
-          >
-            <Check size={17} />
-            {t("Mark reviewed")}
-          </button>
-        </div>
-        <p className="small muted">
-          {t(
-            "Print opens your browser’s print or share flow. Choose Save as PDF where supported.",
+          {!readOnly && (dirty || report.reviewStatus !== "reviewed") && (
+            <button
+              className="button primary"
+              onClick={() => void persist(true)}
+              disabled={saving}
+            >
+              <Check size={22} />
+              {saving ? t("Saving…") : t("Mark reviewed")}
+            </button>
           )}
-        </p>
+        </div>
       </div>
     </main>
   );

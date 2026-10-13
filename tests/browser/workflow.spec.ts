@@ -1,15 +1,21 @@
-import { test, expect, type Page } from "@playwright/test";
+import { test, expect, type Locator, type Page } from "@playwright/test";
 import path from "node:path";
 const imagePath = path.resolve("public/brand/rockwood-logo.png");
 async function home(page: Page) {
   await page.goto("/");
-  if (await page.getByLabel("Your name", { exact: true }).isVisible()) {
+  const name = page.getByLabel("Your name", { exact: true });
+  const projects = page.getByRole("heading", {
+    name: "Choose project",
+    exact: true,
+  });
+  await expect(name.or(projects)).toBeVisible();
+  if (await name.isVisible()) {
     await page.getByLabel("Your name", { exact: true }).fill("Test Visitor");
     await page.getByLabel("Phone number", { exact: true }).fill("3055550123");
     await page.getByRole("button", { name: "Continue", exact: true }).click();
   }
   await expect(
-    page.getByRole("heading", { name: "Your projects" }),
+    page.getByRole("heading", { name: "Choose project" }),
   ).toBeVisible();
 }
 async function project(page: Page, name = "Coral Gables Residence") {
@@ -22,7 +28,7 @@ async function capture(page: Page) {
   await home(page);
   await project(page);
   await page.getByRole("button", { name: "Start walkthrough" }).click();
-  await expect(page.locator(".recording-status")).toContainText("AUDIO REC");
+  await expect(page.locator(".recording-status")).toContainText("Recording");
   await expect(
     page.getByRole("button", { name: "Take photo", exact: true }),
   ).toBeEnabled();
@@ -38,6 +44,38 @@ async function noOverflow(page: Page) {
       () => document.documentElement.scrollWidth <= innerWidth,
     ),
   ).toBe(true);
+}
+async function openDetails(page: Page, selector: string) {
+  const details = page.locator(selector);
+  if (
+    !(await details.evaluate((element: HTMLDetailsElement) => element.open))
+  ) {
+    await details.locator("summary").click();
+  }
+}
+async function checkAi(page: Page) {
+  await openDetails(page, ".review-options");
+  await page
+    .getByRole("button", { name: "Check AI availability", exact: true })
+    .click();
+}
+async function tapTarget(control: Locator, minimum = 48) {
+  await expect(control).toBeVisible();
+  const box = await control.boundingBox();
+  expect(box).not.toBeNull();
+  expect(box!.width).toBeGreaterThanOrEqual(minimum);
+  expect(box!.height).toBeGreaterThanOrEqual(minimum);
+}
+async function fieldTargets(page: Page) {
+  const controls = page.locator(
+    "button, summary, a.button, select, .photo-picker label",
+  );
+  for (const control of await controls.all()) {
+    if (await control.isVisible()) await tapTarget(control);
+  }
+  for (const primary of await page.locator("button.primary").all()) {
+    if (await primary.isVisible()) await tapTarget(primary, 56);
+  }
 }
 async function readSessions(page: Page) {
   return page.evaluate(async () => {
@@ -72,14 +110,89 @@ test("phone viewfinder fills the available width and stays centered", async ({
     const video = await page.locator("video").boundingBox();
     expect(frame).not.toBeNull();
     expect(video).not.toBeNull();
-    expect(frame!.width).toBeCloseTo(viewport.width - 32, 0);
+    expect(frame!.width).toBeCloseTo(viewport.width - 24, 0);
+    expect(frame!.height).toBeGreaterThanOrEqual(
+      Math.min(300, viewport.width - 24),
+    );
     expect(frame!.x + frame!.width / 2).toBeCloseTo(viewport.width / 2, 0);
     expect(video!.width).toBeCloseTo(frame!.width, 0);
     expect(video!.x).toBeCloseTo(frame!.x, 0);
+    await fieldTargets(page);
     await noOverflow(page);
   }
   await page.getByRole("button", { name: "Done", exact: true }).click();
 });
+
+for (const width of [320, 390]) {
+  test(`mobile field workflow uses large tap targets and wide photos at ${width}px`, async ({
+    page,
+  }) => {
+    await page.setViewportSize({ width, height: 844 });
+    await page.goto("/");
+    await expect(page.getByLabel("Your name", { exact: true })).toBeVisible();
+    await tapTarget(page.getByLabel("Your name", { exact: true }), 56);
+    await tapTarget(page.getByLabel("Phone number", { exact: true }), 56);
+    await fieldTargets(page);
+    await noOverflow(page);
+    await home(page);
+    await fieldTargets(page);
+    await noOverflow(page);
+    await project(page);
+    await fieldTargets(page);
+    await noOverflow(page);
+    await page
+      .getByRole("button", { name: "Add photos / notes", exact: true })
+      .click();
+    await page
+      .getByLabel("Add photos", { exact: true })
+      .setInputFiles([imagePath, imagePath]);
+    await expect(page.locator(".photo-thumb")).toHaveCount(2);
+    for (const photo of await page
+      .locator(".review-photos .photo-thumb")
+      .all()) {
+      const bounds = await photo.boundingBox();
+      expect(bounds).not.toBeNull();
+      expect(bounds!.width).toBeGreaterThanOrEqual(width - 64);
+      expect(bounds!.height).toBeGreaterThanOrEqual(180);
+    }
+    await fieldTargets(page);
+    await noOverflow(page);
+    await page.locator(".photo-thumb").first().click();
+    await expect(page.getByRole("dialog")).toBeVisible();
+    await fieldTargets(page);
+    await noOverflow(page);
+    await page
+      .getByRole("button", { name: "Close dialog", exact: true })
+      .click();
+    await page
+      .getByLabel("Walkthrough notes", { exact: true })
+      .fill("Confirm the bathroom finish.");
+    await page
+      .getByRole("button", { name: "Create report", exact: true })
+      .click();
+    await expect(page.locator(".summary-text")).toHaveText(
+      "Confirm the bathroom finish.",
+    );
+    await expect(page.locator(".report-photos img")).toHaveCount(2);
+    await fieldTargets(page);
+    await noOverflow(page);
+    await page.getByRole("button", { name: "Español", exact: true }).click();
+    await expect(page.locator("html")).toHaveAttribute("lang", "es");
+    await expect(page.locator(".summary-text")).toHaveText(
+      "Confirm the bathroom finish.",
+    );
+    await fieldTargets(page);
+    await noOverflow(page);
+    await page.getByRole("button", { name: "English", exact: true }).click();
+    await page
+      .getByRole("button", { name: "Edit report", exact: true })
+      .click();
+    await page.getByRole("button", { name: "Add task", exact: true }).click();
+    await expect(page.locator(".photo-picker label")).toHaveCount(2);
+    await fieldTargets(page);
+    await noOverflow(page);
+  });
+}
 
 test("Done saves offline without an AI request when AI is disabled", async ({
   page,
@@ -94,13 +207,14 @@ test("Done saves offline without an AI request when AI is disabled", async ({
   await context.setOffline(true);
   await page.getByRole("button", { name: "Done", exact: true }).click();
   await expect(
-    page.getByRole("heading", { name: "Walkthrough captured." }),
+    page.getByRole("heading", { name: "Review visit" }),
   ).toBeVisible();
   await expect(
     page
       .locator(".notice[role=alert]")
       .filter({ hasText: /AI|fetch|server|storage failed/i }),
   ).toHaveCount(0);
+  await openDetails(page, ".recording-details");
   await expect(page.locator("audio")).toBeVisible();
   expect(requests).toEqual([]);
   const sessions = (await readSessions(page)) as Array<{
@@ -121,8 +235,12 @@ test("Done saves offline without an AI request when AI is disabled", async ({
   await page.reload();
   await expect(page.locator(".photo-thumb")).toHaveCount(1);
   await expect(
-    page.getByText("Storage: this browser only", { exact: true }),
+    page.getByText(
+      "Saved in this browser only. Clearing browser data deletes this visit.",
+      { exact: true },
+    ),
   ).toBeVisible();
+  await openDetails(page, ".recording-details");
   await expect(page.locator("audio")).toBeVisible();
 });
 
@@ -143,9 +261,7 @@ test("an aborted AI check explains recovery and a retry keeps the capture", asyn
   await capture(page);
   await page.getByRole("button", { name: "Take photo", exact: true }).click();
   await page.getByRole("button", { name: "Done", exact: true }).click();
-  await page
-    .getByRole("button", { name: "Check AI availability", exact: true })
-    .click();
+  await checkAi(page);
   const aiError = page.locator(".notice[role=alert]").filter({ hasText: "AI" });
   await expect(aiError).toContainText(
     "Check AI availability was interrupted or took too long",
@@ -153,15 +269,14 @@ test("an aborted AI check explains recovery and a retry keeps the capture", asyn
   await expect(aiError).not.toContainText("Fetch is aborted");
   await expect(page.locator(".photo-thumb")).toHaveCount(1);
   await page.evaluate(() => Reflect.set(window, "abortAiCheck", false));
-  await page
-    .getByRole("button", { name: "Check AI availability", exact: true })
-    .click();
+  await checkAi(page);
   await expect(aiError).toHaveCount(0);
   await expect(
-    page.getByRole("button", { name: "Create manual report", exact: true }),
+    page.getByRole("button", { name: "Create report", exact: true }),
   ).toBeEnabled();
   await page.reload();
   await expect(page.locator(".photo-thumb")).toHaveCount(1);
+  await openDetails(page, ".recording-details");
   await expect(page.locator("audio")).toBeVisible();
 });
 
@@ -196,8 +311,9 @@ test("three projects, honest sample and desktop/mobile layouts; sample makes no 
   }
   await project(page);
   await page.screenshot({ path: "qa/project-mobile.png", fullPage: true });
+  await page.getByRole("button", { name: "Help", exact: true }).click();
   await page
-    .getByRole("button", { name: "View sample report", exact: true })
+    .getByRole("button", { name: "Sample report", exact: true })
     .click();
   await expect(page.locator(".report-disclosure")).toContainText(
     "Fictional sample report",
@@ -215,8 +331,9 @@ test("sample editing, tasks, review invalidation, saving and project isolation s
 }) => {
   await home(page);
   await project(page);
+  await page.getByRole("button", { name: "Help", exact: true }).click();
   await page
-    .getByRole("button", { name: "View sample report", exact: true })
+    .getByRole("button", { name: "Sample report", exact: true })
     .click();
   await page.getByRole("button", { name: "Edit report", exact: true }).click();
   await page
@@ -228,6 +345,13 @@ test("sample editing, tasks, review invalidation, saving and project isolation s
     .getByRole("button", { name: "Mark reviewed", exact: true })
     .click();
   await expect(page.locator(".report-meta")).toContainText("Reviewed");
+  await expect(
+    page.getByRole("button", { name: "Mark reviewed", exact: true }),
+  ).toHaveCount(0);
+  await page.getByRole("button", { name: "Edit report", exact: true }).click();
+  await expect(
+    page.getByRole("button", { name: "Save report", exact: true }),
+  ).toBeDisabled();
   await page
     .getByRole("textbox", { name: "Visit summary", exact: true })
     .fill("Further sample edits.");
@@ -281,12 +405,14 @@ test("simulated media: audio-only recorder, independent photos, pause timeline, 
   });
   await page.setViewportSize({ width: 390, height: 844 });
   await capture(page);
-  await page.getByLabel("Current area").selectOption("Primary Bathroom");
+  await page
+    .getByLabel("Area", { exact: true })
+    .selectOption("Primary Bathroom");
   await page.getByRole("button", { name: "Take photo", exact: true }).click();
   await expect(page.locator(".photo-thumb")).toHaveCount(1);
   await page.getByRole("button", { name: "Take photo", exact: true }).click();
   await expect(page.locator(".photo-thumb")).toHaveCount(2);
-  await expect(page.locator(".recording-status")).toContainText("AUDIO REC");
+  await expect(page.locator(".recording-status")).toContainText("Recording");
   await page.getByRole("button", { name: "Pause", exact: true }).click();
   await expect(
     page.getByRole("button", { name: "Take photo", exact: true }),
@@ -300,10 +426,15 @@ test("simulated media: audio-only recorder, independent photos, pause timeline, 
   await noOverflow(page);
   await page.getByRole("button", { name: "Done", exact: true }).click();
   await expect(
-    page.getByRole("heading", { name: "Walkthrough captured." }),
+    page.getByRole("heading", { name: "Review visit" }),
   ).toBeVisible();
-  await expect(page.locator(".report-choice")).toContainText(
-    "Automatic AI reports are not enabled",
+  await expect(
+    page.getByRole("button", { name: "Create report", exact: true }),
+  ).toBeEnabled();
+  await expect(page.locator(".review-options")).not.toHaveAttribute("open", "");
+  await openDetails(page, ".review-options");
+  await expect(page.locator(".review-options")).toContainText(
+    "Automatic reports are not connected yet.",
   );
   await expect(page.locator(".notice[role=alert]")).toHaveCount(0);
   const stats = await page.evaluate(() =>
@@ -340,6 +471,7 @@ test("simulated media: audio-only recorder, independent photos, pause timeline, 
   expect(stats.events).toBeGreaterThan(1);
   await page.reload();
   await expect(page.locator(".photo-thumb")).toHaveCount(2);
+  await openDetails(page, ".recording-details");
   await expect(page.locator("audio")).toBeVisible();
 });
 test("visibility interruption pauses honestly and media releases on Done", async ({
@@ -353,7 +485,7 @@ test("visibility interruption pauses honestly and media releases on Done", async
     });
     document.dispatchEvent(new Event("visibilitychange"));
   });
-  await expect(page.locator(".recording-status")).toContainText("PAUSED");
+  await expect(page.locator(".recording-status")).toContainText("Paused");
   await expect(
     page.getByRole("button", { name: "Take photo", exact: true }),
   ).toBeDisabled();
@@ -364,7 +496,7 @@ test("visibility interruption pauses honestly and media releases on Done", async
     });
   });
   await page.getByRole("button", { name: "Resume", exact: true }).click();
-  await expect(page.locator(".recording-status")).toContainText("AUDIO REC");
+  await expect(page.locator(".recording-status")).toContainText("Recording");
   await page.getByRole("button", { name: "Done", exact: true }).click();
   await expect(page.locator("video")).toHaveCount(0);
 });
@@ -382,11 +514,15 @@ test("permission denial offers upload/manual fallback; photos, editing, associat
   await expect(page.locator(".notice[role=alert]")).toContainText(
     "permission was denied",
   );
-  await page.getByRole("button", { name: "Use photos & typed notes" }).click();
+  await page
+    .getByRole("button", { name: "Photos & notes", exact: true })
+    .click();
   await page
     .getByLabel("Walkthrough notes", { exact: true })
     .fill("The vanity is installed. Verify the shower caulking.");
-  await page.getByLabel("Area for uploads").selectOption("Primary Bathroom");
+  await page
+    .getByLabel("Area", { exact: true })
+    .selectOption("Primary Bathroom");
   await page.locator("input[type=file]").setInputFiles(imagePath);
   await expect(page.locator(".photo-thumb")).toHaveCount(1);
   await page.locator(".photo-thumb").click();
@@ -394,7 +530,7 @@ test("permission denial offers upload/manual fallback; photos, editing, associat
     .getByLabel("Optional note", { exact: true })
     .fill("Test upload, not site evidence.");
   await page.getByRole("button", { name: "Save photo details" }).click();
-  await page.getByRole("button", { name: "Create manual report" }).click();
+  await page.getByRole("button", { name: "Create report" }).click();
   await expect(page.locator(".report-disclosure")).toContainText(
     "Manually prepared",
   );
@@ -489,9 +625,7 @@ test("mocked AI failure preserves actual capture and transcript; retry does not 
   await capture(page);
   await page.getByRole("button", { name: "Take photo", exact: true }).click();
   await page.getByRole("button", { name: "Done", exact: true }).click();
-  await page
-    .getByRole("button", { name: "Check AI availability", exact: true })
-    .click();
+  await checkAi(page);
   await expect(
     page
       .locator(".notice[role=alert]")
@@ -499,7 +633,7 @@ test("mocked AI failure preserves actual capture and transcript; retry does not 
   ).toContainText("Mocked provider failure");
   expect(transcriptions).toBe(1);
   await page
-    .getByRole("button", { name: "Prepare report / Retry", exact: true })
+    .getByRole("button", { name: "Create report", exact: true })
     .click();
   await expect.poll(() => reports).toBe(2);
   await expect(
@@ -510,9 +644,7 @@ test("mocked AI failure preserves actual capture and transcript; retry does not 
   expect(transcriptions).toBe(1);
   await page.reload();
   await expect(page.locator(".photo-thumb")).toHaveCount(1);
-  await page
-    .getByRole("button", { name: "Prepare report / Retry", exact: true })
-    .click();
+  await checkAi(page);
   await expect(page.locator(".report-disclosure")).toContainText(
     "AI-assisted draft",
   );
@@ -528,7 +660,7 @@ test("uploads reject HEIC honestly; reset requires confirmation", async ({
   await home(page);
   await project(page);
   await page
-    .getByRole("button", { name: "Prefer to upload photos and type notes?" })
+    .getByRole("button", { name: "Add photos / notes", exact: true })
     .click();
   await page.locator("input[type=file]").setInputFiles({
     name: "photo.heic",
@@ -539,6 +671,7 @@ test("uploads reject HEIC honestly; reset requires confirmation", async ({
     "HEIC is not supported",
   );
   await expect(page.locator(".photo-thumb")).toHaveCount(0);
+  await page.getByRole("button", { name: "Project", exact: true }).click();
   await page
     .getByRole("button", { name: "Reset demo data", exact: true })
     .click();
@@ -551,7 +684,7 @@ test("uploads reject HEIC honestly; reset requires confirmation", async ({
     .getByRole("button", { name: "Delete all local walkthroughs" })
     .click();
   await expect(
-    page.getByRole("heading", { name: "Your projects" }),
+    page.getByRole("heading", { name: "Choose project" }),
   ).toBeVisible();
   expect((await readSessions(page)).length).toBe(0);
 });
@@ -564,7 +697,7 @@ test("interrupted recording recovers persisted photos/audio after reload", async
   await page.waitForTimeout(1300);
   await page.reload();
   await expect(
-    page.getByRole("heading", { name: "Walkthrough captured." }),
+    page.getByRole("heading", { name: "Review visit" }),
   ).toBeVisible();
   await expect(
     page
@@ -572,6 +705,7 @@ test("interrupted recording recovers persisted photos/audio after reload", async
       .filter({ hasText: "Recording was interrupted" }),
   ).toBeVisible();
   await expect(page.locator(".photo-thumb")).toHaveCount(1);
+  await openDetails(page, ".recording-details");
   await expect(page.locator("audio")).toBeVisible();
 });
 test("twelve-photo limit, photo removal, and unsupported-browser fallback", async ({
@@ -589,7 +723,9 @@ test("twelve-photo limit, photo removal, and unsupported-browser fallback", asyn
   await expect(page.locator(".notice[role=alert]")).toContainText(
     "not supported",
   );
-  await page.getByRole("button", { name: "Use photos & typed notes" }).click();
+  await page
+    .getByRole("button", { name: "Photos & notes", exact: true })
+    .click();
   await page
     .locator("input[type=file]")
     .setInputFiles(Array.from({ length: 13 }, () => imagePath));
@@ -617,9 +753,11 @@ test("missing devices are reported with a working manual fallback", async ({
   await expect(page.locator(".notice[role=alert]")).toContainText(
     "No camera or microphone was found",
   );
-  await page.getByRole("button", { name: "Use photos & typed notes" }).click();
+  await page
+    .getByRole("button", { name: "Photos & notes", exact: true })
+    .click();
   await expect(
-    page.getByRole("button", { name: "Create manual report" }),
+    page.getByRole("button", { name: "Create report" }),
   ).toBeEnabled();
 });
 test("plain HTTP capability fallback explains HTTPS and still allows typed notes", async ({
@@ -641,11 +779,13 @@ test("plain HTTP capability fallback explains HTTPS and still allows typed notes
   await expect(page.locator(".notice[role=alert]")).toContainText(
     "HTTPS or localhost",
   );
-  await page.getByRole("button", { name: "Use photos & typed notes" }).click();
+  await page
+    .getByRole("button", { name: "Photos & notes", exact: true })
+    .click();
   await page
     .getByLabel("Walkthrough notes", { exact: true })
     .fill("Manually documented site note.");
-  await page.getByRole("button", { name: "Create manual report" }).click();
+  await page.getByRole("button", { name: "Create report" }).click();
   await expect(page.locator(".summary-text")).toContainText(
     "Manually documented site note.",
   );

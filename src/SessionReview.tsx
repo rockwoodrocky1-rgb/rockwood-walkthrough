@@ -2,7 +2,7 @@
 import { useLanguage } from "./i18n";
 import { createId } from "./id";
 import { useEffect, useState } from "react";
-import { FileText, Download, Mic, RotateCw, ImagePlus } from "lucide-react";
+import { FileText, Download, Mic, RotateCw, ImagePlus, Save } from "lucide-react";
 import {
   LIMITS,
   GENERAL,
@@ -44,7 +44,9 @@ export default function SessionReview({
   const [selected, setSelected] = useState<string>();
   const [area, setArea] = useState(GENERAL);
   const [message, setMessage] = useState("");
-  const [working, setWorking] = useState(false);
+  const [working, setWorking] = useState<"photos" | "notes" | "report" | null>(
+    null,
+  );
   const [notes, setNotes] = useState(session.notes);
   const [transcriptDraft, setTranscript] = useState<string | null>(null);
   const transcript = transcriptDraft ?? session.transcript?.text ?? "";
@@ -60,9 +62,10 @@ export default function SessionReview({
     window.addEventListener("beforeunload", warn);
     return () => window.removeEventListener("beforeunload", warn);
   }, [dirty]);
-  const busy = !!stage || working || readOnly;
+  const busy = !!stage || working !== null || readOnly;
   const active = session.photos.find((p) => p.id === selected);
   async function update(next: Session) {
+    if (readOnly) throw new Error("This visit is view only.");
     if (next.report) {
       const photos = new Set(next.photos.map((p) => p.id));
       const segments = new Set(
@@ -140,8 +143,8 @@ export default function SessionReview({
     return saved;
   }
   async function upload(files: FileList | null) {
-    if (!files) return;
-    setWorking(true);
+    if (!files || busy) return;
+    setWorking("photos");
     setMessage("");
     let next = session;
     try {
@@ -166,19 +169,36 @@ export default function SessionReview({
     } catch (e) {
       setMessage((e as Error).message);
     } finally {
-      setWorking(false);
+      setWorking(null);
     }
   }
   async function run(action: (s: Session) => void) {
+    if (busy) return;
+    setWorking("report");
+    setMessage("");
     try {
       const next = await persistText();
       action(next);
     } catch (e) {
       setMessage((e as Error).message);
+    } finally {
+      setWorking(null);
+    }
+  }
+  async function saveText() {
+    if (busy) return;
+    setWorking("notes");
+    setMessage("");
+    try {
+      await persistText();
+    } catch (e) {
+      setMessage((e as Error).message);
+    } finally {
+      setWorking(null);
     }
   }
   return (
-    <main className="page narrow">
+    <main className="page narrow field-review">
       <Back
         onClick={() => {
           if (
@@ -190,35 +210,25 @@ export default function SessionReview({
             back();
         }}
       >
-        {t("Back to project")}
+        {t("Project")}
       </Back>
       <div className="page-heading">
-        <p className="eyebrow">{t("YOUR FIELD NOTES")}</p>
-        <h1>{t(stage || "Walkthrough captured.")}</h1>
+        <h1>{t("Review visit")}</h1>
         <p>
           {project.name} <span className="dot-separator">·</span>{" "}
-          {formatTime(session.duration)}
-          {t("audio")} <span className="dot-separator">·</span>{" "}
-          {session.photos.length} {t("photos")}
+          {session.photos.length} {t(session.photos.length === 1 ? "photo" : "photos")}
         </p>
       </div>
       {!cloudEnabled && (
         <Notice>
-          <strong>{t("Storage: this browser only")}</strong>
-          <p>
-            {t("Reopen this visit under")}
-            {project.name}
-            {t(
-              "→ Walkthroughs & reports using this same link and browser. It is not uploaded to a shared account or saved to your Photos app. Clearing browser data removes it.",
-            )}
-          </p>
+          {t(
+            "Saved in this browser only. Clearing browser data deletes this visit.",
+          )}
         </Notice>
       )}
       {readOnly && (
         <Notice>
-          {t(
-            "You can view this visit. Only its author or a workspace owner can make changes.",
-          )}
+          {t("View only. The author or owner can edit this visit.")}
         </Notice>
       )}
       {stage && (
@@ -227,9 +237,7 @@ export default function SessionReview({
           <div>
             <strong>{t(stage)}</strong>
             <p>
-              {t(
-                "Keep this page open. Your captured work stays available if processing fails.",
-              )}
+              {t("Keep this page open. Your photos and notes are saved.")}
             </p>
           </div>
         </div>
@@ -241,192 +249,191 @@ export default function SessionReview({
       )}
       {session.lowAudio && (
         <Notice tone="warning">
-          {t(
-            "Very little microphone signal was detected. Listen to the recording before processing, or add a typed transcript below.",
-          )}
+          {t("Audio is quiet. Check the recording or add notes.")}
         </Notice>
       )}
       {message && <Notice tone="warning">{t(message)}</Notice>}
       <div className="review-grid">
-        <section className="panel">
+        <section className="panel review-photos">
           <div className="section-rule">
-            <h2>{t("Recording & notes")}</h2>
-            <Mic size={18} />
-          </div>
-          {audio ? (
-            <>
-              <audio
-                controls
-                src={audio}
-                preload="metadata"
-                aria-label={t("Original walkthrough recording")}
-              />
-              <button
-                className="text-button"
-                onClick={() =>
-                  downloadBlob(
-                    session.audio!,
-                    `walkthrough-${session.id}.${audioExtension(session.mime) || "bin"}`,
-                  )
-                }
-              >
-                <Download size={15} />
-                {t("Download original audio")}
-              </button>
-            </>
-          ) : (
-            <p className="muted">
-              {t(
-                "No audio recording. You can document this visit with uploaded photos and typed notes.",
-              )}
-            </p>
-          )}
-          <label>
-            {t("Walkthrough notes")}
-            <textarea
-              rows={5}
-              value={notes}
-              maxLength={8000}
-              onChange={(e) => setNotes(e.target.value)}
-              placeholder={t(
-                "Record observations, completed work, and follow-up questions.",
-              )}
-              disabled={busy}
-            />
-          </label>
-          <details className="transcript-details">
-            <summary>
-              {t("Transcript")}{" "}
-              {session.transcript?.source === "audio"
-                ? t("· from audio")
-                : t("· optional manual entry")}
-            </summary>
-            <p className="muted small">
-              {t(
-                "Editing creates a manually supplied transcript. Timing stays unconfirmed; photos are not matched automatically.",
-              )}
-            </p>
-            <textarea
-              aria-label={t("Manual transcript")}
-              rows={7}
-              value={transcript}
-              maxLength={50_000}
-              onChange={(e) => setTranscript(e.target.value)}
-              disabled={busy}
-            />
-          </details>
-          <button
-            className="button"
-            onClick={() =>
-              void persistText()
-                .then(() =>
-                  setMessage(
-                    cloudEnabled
-                      ? "Notes and transcript saved to Rockwood."
-                      : "Notes and transcript saved in this browser. Reopen them from this project’s Walkthroughs & reports.",
-                  ),
-                )
-                .catch((e) => setMessage(e.message))
-            }
-            disabled={busy}
-          >
-            {t("Save notes & transcript")}
-          </button>
-        </section>
-        <section className="panel">
-          <div className="section-rule">
-            <h2>{t("Visit photos")}</h2>
+            <h2>{t("Photos")}</h2>
             <span>
               {session.photos.length}/{LIMITS.photos}
             </span>
           </div>
           <PhotoStrip photos={session.photos} onSelect={setSelected} />
+          {!readOnly && (
+            <>
+              <label>
+                {t("Area")}
+                <select
+                  value={area}
+                  onChange={(e) => setArea(e.target.value)}
+                  disabled={busy}
+                >
+                  <option value={GENERAL}>{t(GENERAL)}</option>
+                  {project.areas.map((a) => (
+                    <option key={a} value={a}>
+                      {t(a)}
+                    </option>
+                  ))}
+                </select>
+              </label>
+              <label
+                className={`upload-zone ${busy || session.photos.length >= LIMITS.photos ? "disabled" : ""}`}
+              >
+                <ImagePlus size={28} aria-hidden />
+                <strong>
+                  {working === "photos" ? t("Adding photos…") : t("Add photos")}
+                </strong>
+                <input
+                  type="file"
+                  aria-label={t("Add photos")}
+                  accept="image/jpeg,image/png,image/webp"
+                  multiple
+                  disabled={busy || session.photos.length >= LIMITS.photos}
+                  onChange={(e) => {
+                    void upload(e.target.files);
+                    e.target.value = "";
+                  }}
+                />
+              </label>
+              {session.photos.length >= LIMITS.photos && (
+                <p className="photo-limit">{t("Photo limit reached.")}</p>
+              )}
+            </>
+          )}
+        </section>
+        <section className="panel review-notes">
+          <div className="section-rule">
+            <h2>{t("Notes")}</h2>
+            <FileText size={22} aria-hidden />
+          </div>
           <label>
-            {t("Area for uploads")}
-            <select
-              value={area}
-              onChange={(e) => setArea(e.target.value)}
-              disabled={busy}
-            >
-              <option value={GENERAL}>{t(GENERAL)}</option>
-              {project.areas.map((a) => (
-                <option key={a} value={a}>
-                  {t(a)}
-                </option>
-              ))}
-            </select>
-          </label>
-          <label className={`upload-zone ${busy ? "disabled" : ""}`}>
-            <ImagePlus size={25} />
-            <strong>
-              {working ? t("Preparing photos…") : t("Add site photos")}
-            </strong>
-            <span>{t("JPEG, PNG or WebP · up to 12 photos")}</span>
-            <input
-              type="file"
-              accept="image/jpeg,image/png,image/webp"
-              multiple
-              disabled={busy || session.photos.length >= LIMITS.photos}
-              onChange={(e) => {
-                void upload(e.target.files);
-                e.target.value = "";
-              }}
+            <span className="sr-only">{t("Walkthrough notes")}</span>
+            <textarea
+              rows={5}
+              value={notes}
+              maxLength={8000}
+              onChange={(e) => setNotes(e.target.value)}
+              placeholder={t("What needs attention?")}
+              readOnly={readOnly}
+              disabled={!readOnly && busy}
             />
           </label>
-          <p className="muted small">
-            {t(
-              "Uploads are marked as untimed. HEIC is not supported. Keep original files outside this prototype if needed.",
-            )}
-          </p>
+          {(audio || transcript || !readOnly) && (
+            <details
+              className="recording-details"
+              open={session.lowAudio || undefined}
+            >
+              <summary>
+                <Mic size={22} aria-hidden /> {t("Recording & transcript")}
+              </summary>
+              {audio && (
+                <>
+                  <audio
+                    controls
+                    src={audio}
+                    preload="metadata"
+                    aria-label={t("Original walkthrough recording")}
+                  />
+                  <button
+                    className="button"
+                    onClick={() =>
+                      downloadBlob(
+                        session.audio!,
+                        `walkthrough-${session.id}.${audioExtension(session.mime) || "bin"}`,
+                      )
+                    }
+                  >
+                    <Download size={22} aria-hidden />
+                    {t("Download audio")} · {formatTime(session.duration)}
+                  </button>
+                </>
+              )}
+              <label>
+                {t("Transcript")}
+                <textarea
+                  aria-label={t("Manual transcript")}
+                  rows={5}
+                  value={transcript}
+                  maxLength={50_000}
+                  onChange={(e) => setTranscript(e.target.value)}
+                  readOnly={readOnly}
+                  disabled={!readOnly && busy}
+                  placeholder={t("Add spoken notes here.")}
+                />
+              </label>
+            </details>
+          )}
+          {!readOnly && (
+            <button
+              className="button save-notes"
+              onClick={() => void saveText()}
+              disabled={busy || !dirty}
+            >
+              <Save size={22} aria-hidden />
+              {working === "notes"
+                ? t("Saving…")
+                : dirty
+                  ? t("Save notes")
+                  : t("Notes saved")}
+            </button>
+          )}
         </section>
       </div>
-      <section className="report-choice">
-        <h2>{t("Turn the visit into a clear next step.")}</h2>
-        <p>
-          {liveAiEnabled
-            ? t(
-                "AI reporting sends your audio, notes and selected photos to OpenAI. Review the draft before sharing.",
-              )
-            : t(
-                "Automatic AI reports are not enabled for this test. Create a manual report with your photos and notes, or explore the sample below.",
-              )}
-        </p>
-        <div className="button-row">
+      {!readOnly && (
+        <section className="report-choice review-actions">
+          {liveAiEnabled && (
+            <p>
+              {t("AI sends this visit to OpenAI. Review the report before sharing.")}
+            </p>
+          )}
           <button
-            className={`button ${liveAiEnabled ? "primary" : ""}`}
-            onClick={() => void run(process)}
+            className="button primary report-next"
+            onClick={() => void run(liveAiEnabled ? process : manual)}
             disabled={busy}
           >
-            <RotateCw size={17} />
-            {session.transcript
-              ? t("Prepare report / Retry")
-              : liveAiEnabled
-                ? t("Transcribe & prepare report")
-                : t("Check AI availability")}
+            <FileText size={24} aria-hidden />
+            {working === "report" || stage
+              ? t("Preparing…")
+              : t("Create report")}
           </button>
-          <button
-            className={`button ${liveAiEnabled ? "" : "primary"}`}
-            onClick={() => void run(manual)}
-            disabled={busy}
-          >
-            <FileText size={17} />
-            {t("Create manual report")}
-          </button>
-        </div>
-        <button
-          className="text-button sample-link"
-          onClick={sample}
-          disabled={busy}
-        >
-          {t("View sample report — not based on this recording")}{" "}
-          <span aria-hidden>›</span>
-        </button>
-      </section>
+          <details className="review-options">
+            <summary>{t("More options")}</summary>
+            {!liveAiEnabled && (
+              <p>{t("Automatic reports are not connected yet.")}</p>
+            )}
+            <div className="button-row">
+              <button
+                className="button"
+                onClick={() => void run(liveAiEnabled ? manual : process)}
+                disabled={busy}
+              >
+                {liveAiEnabled ? (
+                  <FileText size={22} aria-hidden />
+                ) : (
+                  <RotateCw size={22} aria-hidden />
+                )}
+                {liveAiEnabled ? t("Write report") : t("Check AI availability")}
+              </button>
+              <button
+                className="button"
+                onClick={() => void run(() => sample())}
+                disabled={busy}
+              >
+                {t("Sample report")}
+              </button>
+            </div>
+          </details>
+        </section>
+      )}
       {active && (
         <PhotoDialog
           key={active.id}
           photo={active}
           project={project}
+          readOnly={busy}
           close={() => setSelected(undefined)}
           save={(p) =>
             void update({

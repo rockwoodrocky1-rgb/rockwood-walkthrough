@@ -52,7 +52,7 @@ export function LanguageProvider({ children }: { children: ReactNode }) {
   }, []);
   useEffect(() => {
     document.documentElement.lang = language;
-    document.title = `${language === "es" ? "Recorrido" : "Walkthrough"} · Rockwood Development`;
+    document.title = "Rockwood Cam";
   }, [language]);
   const value = useMemo(
     () => ({
