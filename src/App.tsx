@@ -39,13 +39,30 @@ import {
   prepareReport,
   translateReport,
   getLiveConfig,
+  queueProcessing,
 } from "./api";
+import ProcessingStatusPanel from "./ProcessingStatus";
 import { Back, Header, Modal, Notice } from "./ui";
 import WalkthroughCapture from "./WalkthroughCapture";
 import SessionReview, { makeManualReport } from "./SessionReview";
 import ReportEditor from "./ReportEditor";
 import { restoreReportLink } from "./report-link";
 type Screen = "projects" | "project" | "capture" | "source" | "report";
+export async function resolveVisitForOpening(session: Session, cloud?: WorkspaceAccess, fresh = false) {
+  return cloud && (fresh || session.cloud?.mediaLoaded === false)
+    ? loadCloudSession(cloud, session.id)
+    : session;
+}
+export async function saveSourceForProcessing(session: Session, cloud: WorkspaceAccess | undefined, save: (session: Session) => Promise<Session>) {
+  const current = { ...session, error: undefined };
+  // Queue retries use the existing revision. Saving an unchanged source would
+  // bypass the database's per-revision deduplication and repeat transcription.
+  if (cloud && current.cloud?.revision && !current.cloud.pending && !current.report)
+    return current;
+  // An explicit regeneration of an existing report intentionally starts a new
+  // revision; a new capture or recovery copy still needs its first cloud save.
+  return save(current);
+}
 export default function App({
   logoAvailable,
   initialLiveAiEnabled,
@@ -62,9 +79,29 @@ export default function App({
   const { t, language, locale } = useLanguage();
   const projects = cloud?.projects ?? demoProjects;
   const [liveAiEnabled, setLiveAiEnabled] = useState(initialLiveAiEnabled);
+  const [backgroundProcessing, setBackgroundProcessing] = useState(false);
+  const [processingRefresh, setProcessingRefresh] = useState(0);
+  const [processingState, setProcessingState] = useState<{key: string; busy: boolean} | null>(null);
+  const [sourceDirty, setSourceDirty] = useState(false);
+  const [sourceReload, setSourceReload] = useState(0);
+  const processingBusy = useCallback((key: string, busy: boolean) => setProcessingState({key, busy}), []);
+  useEffect(() => {
+    if (!cloud) return;
+    let cancelled = false;
+    void getLiveConfig().then(config => {
+      if (!cancelled) {
+        setLiveAiEnabled(config.live);
+        setBackgroundProcessing(config.processing === "background");
+      }
+    }).catch(() => {});
+    return () => {cancelled = true;};
+  }, [cloud]);
   const [screen, setScreen] = useState<Screen>("projects");
   const [project, setProject] = useState<Project>(projects[0]);
   const [active, setActive] = useState<Session>();
+  const processingStatusKey = `${active?.id}:${active?.cloud?.revision ?? 0}:${processingRefresh}`;
+  const sourceProcessingLocked = !!(backgroundProcessing && cloud && active && !active.cloud?.pending &&
+    (processingState?.key !== processingStatusKey || processingState.busy));
   const [sessions, setSessions] = useState<Session[]>([]);
   const [error, setError] = useState("");
   const [stage, setStage] = useState("");
@@ -143,6 +180,8 @@ export default function App({
       setError("Finish the current walkthrough before leaving.");
       return;
     }
+    if (screen === "source" && sourceDirty &&
+      !window.confirm(t("Leave without saving your notes and transcript edits?"))) return;
     if (
       screen === "report" &&
       !window.confirm(t("Return to projects? Save any report edits first."))
@@ -150,7 +189,7 @@ export default function App({
       return;
     navigate("projects");
   }
-  function update(s: Session): Promise<void> {
+  function update(s: Session): Promise<Session> {
     const operation = saveQueue.current.then(async () => {
       let next = s;
       if (cloud) {
@@ -200,19 +239,23 @@ export default function App({
         }
       }
       await refresh();
+      return next;
     });
-    saveQueue.current = operation.catch(() => {});
+    saveQueue.current = operation.then(() => {}, () => {});
     return operation;
   }
-  async function openSession(s: Session, selectedProject = project) {
+  async function openSession(s: Session, selectedProject = project, fresh = false) {
+    if (fresh && sourceDirty && !window.confirm(t("Open the saved visit? Unsaved notes and transcript edits will be discarded."))) return;
     try {
+      setError("");
       setStage("Opening saved visit");
-      const hydrated =
-        cloud && s.cloud?.mediaLoaded === false
-          ? await loadCloudSession(cloud, s.id)
-          : s;
+      const hydrated = await resolveVisitForOpening(s, cloud, fresh);
       if (cloud) savedVersions.current.set(hydrated.id, hydrated.cloud);
       else await saveSession(hydrated);
+      setSessions(items => items.map(item => item.id === hydrated.id ? hydrated : item));
+      // Only an explicit reload replaces the editor draft. Ordinary uploads
+      // must not remount it while the user has other notes in progress.
+      if (fresh) setSourceReload(value => value + 1);
       navigate(
         hydrated.report ? "report" : "source",
         selectedProject,
@@ -222,6 +265,22 @@ export default function App({
       setError((error as Error).message);
     } finally {
       setStage("");
+    }
+  }
+  async function retryProcessing() {
+    if (!cloud || !active || sourceDirty || stage || uploading || lock.current) return;
+    lock.current = true;
+    setStage("Queuing report");
+    setError("");
+    try {
+      await queueProcessing(cloud.workspaceId, active.id, true);
+    } catch (error) {
+      setError((error as Error).message);
+    } finally {
+      // A lost response may still have queued the job. Check before editing.
+      setProcessingRefresh(value => value + 1);
+      setStage("");
+      lock.current = false;
     }
   }
   function sample() {
@@ -239,6 +298,7 @@ export default function App({
       id: createId(),
       participant: cloud?.participant ?? participant,
       language,
+      recordingLanguage: language,
       projectId: project.id,
       startedAt: new Date().toISOString(),
       duration: 0,
@@ -249,7 +309,7 @@ export default function App({
     };
     navigate("capture", project, s);
   }
-  async function process(s: Session) {
+  async function process(s: Session, retry = false) {
     if (lock.current) return;
     if (
       s.report &&
@@ -261,19 +321,29 @@ export default function App({
     )
       return;
     lock.current = true;
-    let current = s;
+    let current: Session = { ...s, error: undefined };
+    let backgroundAttempted = false;
     setStage("Saving walkthrough");
     navigate("source", project, s);
     try {
-      await update(current);
+      current = await saveSourceForProcessing(current, cloud, update);
+      setActive(current);
       setStage("Checking AI availability");
       const config = await getLiveConfig();
       setLiveAiEnabled(config.live);
       if (!config.live) {
-        await update({ ...current, error: undefined });
+        setError("Automatic reports are not connected yet. Your visit is saved.");
         return;
       }
-      if (!current.transcript && current.audio?.size) {
+      if (config.processing === "background" && cloud) {
+        backgroundAttempted = true;
+        setBackgroundProcessing(true);
+        setStage("Queuing report");
+        await queueProcessing(cloud.workspaceId, current.id, retry);
+        setProcessingRefresh(v => v + 1);
+        return;
+      }
+      if (!current.transcript?.text.trim() && current.audio?.size) {
         setStage("Transcribing audio");
         current = { ...current, transcript: await transcribe(current) };
         await update(current);
@@ -303,6 +373,13 @@ export default function App({
           : current,
       );
     } catch (e) {
+      if (backgroundAttempted) {
+        // The saved source is already on the site. Do not replace it with a
+        // stale recovery copy when an enqueue response is lost or rejected.
+        setError(e instanceof Error ? e.message : "Could not confirm report processing. Your visit is saved. Check report progress before retrying.");
+        setProcessingRefresh(value => value + 1);
+        return;
+      }
       current = {
         ...current,
         error:
@@ -340,6 +417,7 @@ export default function App({
   function done(s: Session) {
     s = {
       ...s,
+      recordingLanguage: s.recordingLanguage ?? s.language ?? "en",
       language: s.language === "es" || language === "es" ? "es" : "en",
     };
     setActive(s);
@@ -469,6 +547,20 @@ export default function App({
         <div className="global-notice">
           <Notice>{t("Opening saved visit…")}</Notice>
         </div>
+      )}
+      {backgroundProcessing && cloud && active && screen === "source" && !active.cloud?.pending && (
+        <ProcessingStatusPanel
+          key={processingStatusKey}
+          workspaceId={cloud.workspaceId} visitId={active.id}
+          revision={active.cloud?.revision ?? 0}
+          statusKey={processingStatusKey}
+          onBusy={processingBusy}
+          canRetry={canEditSession(cloud, active)}
+          dirty={sourceDirty}
+          working={!!stage || !!uploading}
+          openReport={() => void openSession(active, project, true)}
+          retry={() => void retryProcessing()}
+        />
       )}
       {error && (
         <div className="global-notice no-print">
@@ -655,15 +747,17 @@ export default function App({
       )}
       {screen === "source" && active && (
         <SessionReview
-          key={active.id}
+          key={`${active.id}:${sourceReload}`}
           project={project}
           session={active}
           stage={stage}
+          backgroundBusy={sourceProcessingLocked}
+          onDirtyChange={setSourceDirty}
           liveAiEnabled={liveAiEnabled}
           cloudEnabled={!!cloud}
           readOnly={!!cloud && !canEditSession(cloud, active)}
           update={update}
-          process={(s) => void process(s)}
+          process={(s) => void process(s, true)}
           manual={(s) => void manual(s)}
           back={() => {
             if (!stage) navigate("project");
@@ -680,7 +774,7 @@ export default function App({
           cloudEnabled={!!cloud}
           cloud={cloud}
           readOnly={!!cloud && !canEditSession(cloud, active)}
-          save={update}
+          save={async (session) => { await update(session); }}
           back={() => navigate("project")}
           source={() => navigate("source")}
         />

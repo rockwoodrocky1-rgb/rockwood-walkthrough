@@ -115,6 +115,29 @@ describe("shared walkthrough persistence", () => {
     });
     expect(await saved.audio?.text()).toBe("audio");
   });
+  it.each([
+    { recordingLanguage: "en" as const, language: "es" as const },
+    { recordingLanguage: "es" as const, language: "en" as const },
+  ])("preserves recording language $recordingLanguage when the report/UI language is $language across save and reopen", async languages => {
+    let persisted = row;
+    const fetcher = vi.fn<typeof fetch>(async (input, init) => {
+      if (String(input).includes("/storage/"))
+        return init?.method === "POST" ? response({ Key: "saved" }) : new Response("audio");
+      if (init?.method === "POST") {
+        persisted = { ...row, ...JSON.parse(init.body as string) };
+        return response(persisted, 201);
+      }
+      return response(persisted);
+    });
+    const saved = await saveCloudSession(setup(fetcher), {
+      ...session(), ...languages, audio: new Blob(["audio"], { type: "audio/webm" }),
+    });
+    expect(persisted.payload).toMatchObject(languages);
+    expect(saved).toMatchObject(languages);
+    const reopened = await loadCloudSession(setup(fetcher), row.id);
+    expect(reopened).toMatchObject(languages);
+    expect(await reopened.audio?.text()).toBe("audio");
+  });
   it("never commits metadata when a media upload fails", async () => {
     const fetcher = vi.fn<typeof fetch>(async () =>
       response({ message: "Upload failed" }, 400),

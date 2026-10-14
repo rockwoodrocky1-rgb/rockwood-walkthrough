@@ -1,0 +1,726 @@
+{
+  "AWSTemplateFormatVersion": "2010-09-09",
+  "Description": "Rockwood pilot: private staging, durable scheduled worker, narrowly scoped production Vercel OIDC. Disabled until reviewed code and server secret are installed.",
+  "Parameters": {
+    "VercelTeam": {
+      "Type": "String",
+      "Default": "rockwood1",
+      "AllowedPattern": "[a-z0-9-]+"
+    },
+    "VercelProject": {
+      "Type": "String",
+      "Default": "rockwood-walkthrough",
+      "AllowedPattern": "[a-z0-9-]+"
+    },
+    "SupabaseUrl": {
+      "Type": "String",
+      "Default": "https://vyvwqullxdyeympptyix.supabase.co",
+      "AllowedPattern": "https://[a-z0-9]+[.]supabase[.]co"
+    },
+    "AppUrl": {
+      "Type": "String",
+      "Default": "https://rockwood-walkthrough.vercel.app",
+      "AllowedPattern": "https://[a-z0-9.-]+"
+    },
+    "WorkerCodeKey": {
+      "Type": "String",
+      "Default": "",
+      "AllowedPattern": "(|releases/[a-zA-Z0-9._-]+[.]zip)"
+    },
+    "WorkerEnabled": {
+      "Type": "String",
+      "Default": "false",
+      "AllowedValues": [
+        "false",
+        "true"
+      ]
+    },
+    "EmailEnabled": {
+      "Type": "String",
+      "Default": "false",
+      "AllowedValues": [
+        "false",
+        "true"
+      ]
+    },
+    "SenderAddress": {
+      "Type": "String",
+      "Default": "rockwoodrocky1@gmail.com",
+      "AllowedPattern": "[^\\s<>@]+@[^\\s<>@]+"
+    },
+    "SenderIdentity": {
+      "Type": "String",
+      "Default": "rockwoodrocky1@gmail.com",
+      "AllowedPattern": "[a-zA-Z0-9@._+-]+"
+    },
+    "EmailNotBefore": {
+      "Type": "String",
+      "Default": "2099-01-01T00:00:00.000Z",
+      "Description": "Only reports created after this activation timestamp may be emailed. Earlier reports remain held for review."
+    },
+    "ReserveWorkerConcurrency": {
+      "Type": "String",
+      "Default": "false",
+      "AllowedValues": [
+        "false",
+        "true"
+      ],
+      "Description": "Optional reservation of one worker execution. Enable only when the regional concurrency quota and existing reservations leave at least 100 unreserved executions (quota at least 101)."
+    }
+  },
+  "Conditions": {
+    "HasWorkerCode": {
+      "Fn::Not": [
+        {
+          "Fn::Equals": [
+            {
+              "Ref": "WorkerCodeKey"
+            },
+            ""
+          ]
+        }
+      ]
+    },
+    "EnableWorker": {
+      "Fn::And": [
+        {
+          "Fn::Equals": [
+            {
+              "Ref": "WorkerEnabled"
+            },
+            "true"
+          ]
+        },
+        {
+          "Fn::Not": [
+            {
+              "Fn::Equals": [
+                {
+                  "Ref": "WorkerCodeKey"
+                },
+                ""
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    "EnableEmail": {
+      "Fn::Equals": [
+        {
+          "Ref": "EmailEnabled"
+        },
+        "true"
+      ]
+    },
+    "ReserveWorker": {
+      "Fn::Equals": [
+        {
+          "Ref": "ReserveWorkerConcurrency"
+        },
+        "true"
+      ]
+    }
+  },
+  "Resources": {
+    "StagingBucket": {
+      "Type": "AWS::S3::Bucket",
+      "DeletionPolicy": "Retain",
+      "UpdateReplacePolicy": "Retain",
+      "Properties": {
+        "BucketName": {
+          "Fn::Sub": "${AWS::AccountId}-rockwood-pilot-${AWS::Region}"
+        },
+        "BucketEncryption": {
+          "ServerSideEncryptionConfiguration": [
+            {
+              "ServerSideEncryptionByDefault": {
+                "SSEAlgorithm": "AES256"
+              }
+            }
+          ]
+        },
+        "PublicAccessBlockConfiguration": {
+          "BlockPublicAcls": true,
+          "BlockPublicPolicy": true,
+          "IgnorePublicAcls": true,
+          "RestrictPublicBuckets": true
+        },
+        "OwnershipControls": {
+          "Rules": [
+            {
+              "ObjectOwnership": "BucketOwnerEnforced"
+            }
+          ]
+        },
+        "LifecycleConfiguration": {
+          "Rules": [
+            {
+              "Id": "ExpireStaging",
+              "Status": "Enabled",
+              "Prefix": "jobs/",
+              "ExpirationInDays": 7,
+              "AbortIncompleteMultipartUpload": {
+                "DaysAfterInitiation": 1
+              }
+            }
+          ]
+        },
+        "Tags": [
+          {
+            "Key": "Project",
+            "Value": "rockwood-walkthrough"
+          },
+          {
+            "Key": "Environment",
+            "Value": "pilot"
+          }
+        ]
+      }
+    },
+    "StagingBucketPolicy": {
+      "Type": "AWS::S3::BucketPolicy",
+      "Properties": {
+        "Bucket": {
+          "Ref": "StagingBucket"
+        },
+        "PolicyDocument": {
+          "Version": "2012-10-17",
+          "Statement": [
+            {
+              "Effect": "Deny",
+              "Principal": "*",
+              "Action": "s3:*",
+              "Resource": [
+                {
+                  "Fn::GetAtt": [
+                    "StagingBucket",
+                    "Arn"
+                  ]
+                },
+                {
+                  "Fn::Sub": "${StagingBucket.Arn}/*"
+                }
+              ],
+              "Condition": {
+                "Bool": {
+                  "aws:SecureTransport": "false"
+                }
+              }
+            }
+          ]
+        }
+      }
+    },
+    "ServerSecret": {
+      "Type": "AWS::SecretsManager::Secret",
+      "DeletionPolicy": "Retain",
+      "UpdateReplacePolicy": "Retain",
+      "Properties": {
+        "Name": "rockwood/pilot/supabase",
+        "Description": "Existing Rockwood test Supabase server key; populate privately after approval. Never commit its value.",
+        "SecretString": "{\"SUPABASE_SECRET_KEY\":\"\"}",
+        "Tags": [
+          {
+            "Key": "Project",
+            "Value": "rockwood-walkthrough"
+          }
+        ]
+      }
+    },
+    "WorkerLogs": {
+      "Type": "AWS::Logs::LogGroup",
+      "Properties": {
+        "LogGroupName": "/aws/lambda/rockwood-pilot-worker",
+        "RetentionInDays": 14
+      }
+    },
+    "WorkerRole": {
+      "Type": "AWS::IAM::Role",
+      "Properties": {
+        "AssumeRolePolicyDocument": {
+          "Version": "2012-10-17",
+          "Statement": [
+            {
+              "Effect": "Allow",
+              "Principal": {
+                "Service": "lambda.amazonaws.com"
+              },
+              "Action": "sts:AssumeRole"
+            }
+          ]
+        },
+        "Policies": [
+          {
+            "PolicyName": "RockwoodPilotWorker",
+            "PolicyDocument": {
+              "Version": "2012-10-17",
+              "Statement": [
+                {
+                  "Effect": "Allow",
+                  "Action": [
+                    "logs:CreateLogStream",
+                    "logs:PutLogEvents"
+                  ],
+                  "Resource": {
+                    "Fn::GetAtt": [
+                      "WorkerLogs",
+                      "Arn"
+                    ]
+                  }
+                },
+                {
+                  "Effect": "Allow",
+                  "Action": [
+                    "secretsmanager:GetSecretValue"
+                  ],
+                  "Resource": {
+                    "Ref": "ServerSecret"
+                  }
+                },
+                {
+                  "Effect": "Allow",
+                  "Action": [
+                    "s3:GetObject",
+                    "s3:PutObject"
+                  ],
+                  "Resource": {
+                    "Fn::Sub": "${StagingBucket.Arn}/jobs/*"
+                  }
+                },
+                {
+                  "Effect": "Allow",
+                  "Action": [
+                    "transcribe:StartTranscriptionJob"
+                  ],
+                  "Resource": "*",
+                  "Condition": {
+                    "StringEquals": {
+                      "transcribe:OutputBucketName": {
+                        "Ref": "StagingBucket"
+                      },
+                      "aws:RequestedRegion": {
+                        "Ref": "AWS::Region"
+                      }
+                    },
+                    "StringLike": {
+                      "transcribe:OutputKey": "jobs/*/transcript.json"
+                    }
+                  }
+                },
+                {
+                  "Effect": "Allow",
+                  "Action": [
+                    "transcribe:GetTranscriptionJob"
+                  ],
+                  "Resource": {
+                    "Fn::Sub": "arn:${AWS::Partition}:transcribe:${AWS::Region}:${AWS::AccountId}:transcription-job/rockwood-*"
+                  }
+                },
+                {
+                  "Effect": "Allow",
+                  "Action": [
+                    "iam:PassRole"
+                  ],
+                  "Resource": {
+                    "Fn::GetAtt": [
+                      "TranscribeDataRole",
+                      "Arn"
+                    ]
+                  },
+                  "Condition": {
+                    "StringEquals": {
+                      "iam:PassedToService": "transcribe.amazonaws.com"
+                    }
+                  }
+                },
+                {
+                  "Effect": "Allow",
+                  "Action": [
+                    "bedrock:InvokeModel"
+                  ],
+                  "Resource": [
+                    {
+                      "Fn::Sub": "arn:${AWS::Partition}:bedrock:us-east-1:${AWS::AccountId}:inference-profile/us.amazon.nova-2-lite-v1:0"
+                    },
+                    {
+                      "Fn::Sub": "arn:${AWS::Partition}:bedrock:us-east-1::foundation-model/amazon.nova-2-lite-v1:0"
+                    },
+                    {
+                      "Fn::Sub": "arn:${AWS::Partition}:bedrock:us-east-2::foundation-model/amazon.nova-2-lite-v1:0"
+                    },
+                    {
+                      "Fn::Sub": "arn:${AWS::Partition}:bedrock:us-west-2::foundation-model/amazon.nova-2-lite-v1:0"
+                    }
+                  ]
+                },
+                {
+                  "Fn::If": [
+                    "EnableEmail",
+                    {
+                      "Effect": "Allow",
+                      "Action": [
+                        "ses:SendEmail"
+                      ],
+                      "Resource": {
+                        "Fn::Sub": "arn:${AWS::Partition}:ses:${AWS::Region}:${AWS::AccountId}:identity/${SenderIdentity}"
+                      },
+                      "Condition": {
+                        "ForAllValues:StringEquals": {
+                          "ses:Recipients": [
+                            "rockwoodrocky1@gmail.com"
+                          ]
+                        },
+                        "StringEquals": {
+                          "ses:FromAddress": {
+                            "Ref": "SenderAddress"
+                          }
+                        }
+                      }
+                    },
+                    {
+                      "Ref": "AWS::NoValue"
+                    }
+                  ]
+                }
+              ]
+            }
+          }
+        ],
+        "Tags": [
+          {
+            "Key": "Project",
+            "Value": "rockwood-walkthrough"
+          }
+        ]
+      }
+    },
+    "Worker": {
+      "Type": "AWS::Lambda::Function",
+      "Properties": {
+        "FunctionName": "rockwood-pilot-worker",
+        "Runtime": "nodejs22.x",
+        "Handler": "index.handler",
+        "Role": {
+          "Fn::GetAtt": [
+            "WorkerRole",
+            "Arn"
+          ]
+        },
+        "Timeout": 240,
+        "MemorySize": 1024,
+        "ReservedConcurrentExecutions": {
+          "Fn::If": [
+            "ReserveWorker",
+            1,
+            {
+              "Ref": "AWS::NoValue"
+            }
+          ]
+        },
+        "Code": {
+          "Fn::If": [
+            "HasWorkerCode",
+            {
+              "S3Bucket": {
+                "Ref": "StagingBucket"
+              },
+              "S3Key": {
+                "Ref": "WorkerCodeKey"
+              }
+            },
+            {
+              "ZipFile": "exports.handler = async () => ({enabled:false, reason:'Install the reviewed worker bundle before enabling the schedule.'});"
+            }
+          ]
+        },
+        "Environment": {
+          "Variables": {
+            "AI_PROVIDER": "aws",
+            "LIVE_AI_ENABLED": "true",
+            "AWS_PROCESSING_ENABLED": {
+              "Ref": "WorkerEnabled"
+            },
+            "ROCKWOOD_AWS_REGION": {
+              "Ref": "AWS::Region"
+            },
+            "AWS_BEDROCK_MODEL_ID": "us.amazon.nova-2-lite-v1:0",
+            "AWS_TRANSCRIBE_BUCKET": {
+              "Ref": "StagingBucket"
+            },
+            "ROCKWOOD_SERVER_SECRET_ARN": {
+              "Ref": "ServerSecret"
+            },
+            "NEXT_PUBLIC_SUPABASE_URL": {
+              "Ref": "SupabaseUrl"
+            },
+            "APP_URL": {
+              "Ref": "AppUrl"
+            },
+            "REPORT_DELIVERY_ENABLED": "true",
+            "REPORT_EMAIL_PROVIDER": {
+              "Fn::If": [
+                "EnableEmail",
+                "ses",
+                "disabled"
+              ]
+            },
+            "REPORT_EMAIL_FROM": {
+              "Ref": "SenderAddress"
+            },
+            "REPORT_EMAIL_NOT_BEFORE": {
+              "Ref": "EmailNotBefore"
+            },
+            "AWS_TRANSCRIBE_DATA_ROLE_ARN": {
+              "Fn::GetAtt": [
+                "TranscribeDataRole",
+                "Arn"
+              ]
+            }
+          }
+        },
+        "Tags": [
+          {
+            "Key": "Project",
+            "Value": "rockwood-walkthrough"
+          },
+          {
+            "Key": "Environment",
+            "Value": "pilot"
+          }
+        ]
+      }
+    },
+    "Tick": {
+      "Type": "AWS::Events::Rule",
+      "Properties": {
+        "Description": "Process one queued Rockwood stage and one report delivery each minute.",
+        "ScheduleExpression": "rate(1 minute)",
+        "State": {
+          "Fn::If": [
+            "EnableWorker",
+            "ENABLED",
+            "DISABLED"
+          ]
+        },
+        "Targets": [
+          {
+            "Id": "RockwoodWorker",
+            "Arn": {
+              "Fn::GetAtt": [
+                "Worker",
+                "Arn"
+              ]
+            },
+            "RetryPolicy": {
+              "MaximumRetryAttempts": 0,
+              "MaximumEventAgeInSeconds": 60
+            }
+          }
+        ]
+      }
+    },
+    "TickPermission": {
+      "Type": "AWS::Lambda::Permission",
+      "Properties": {
+        "Action": "lambda:InvokeFunction",
+        "FunctionName": {
+          "Ref": "Worker"
+        },
+        "Principal": "events.amazonaws.com",
+        "SourceArn": {
+          "Fn::GetAtt": [
+            "Tick",
+            "Arn"
+          ]
+        },
+        "SourceAccount": {
+          "Ref": "AWS::AccountId"
+        }
+      }
+    },
+    "VercelOidc": {
+      "Type": "AWS::IAM::OIDCProvider",
+      "Properties": {
+        "Url": {
+          "Fn::Sub": "https://oidc.vercel.com/${VercelTeam}"
+        },
+        "ClientIdList": [
+          {
+            "Fn::Sub": "https://vercel.com/${VercelTeam}"
+          }
+        ],
+        "Tags": [
+          {
+            "Key": "Project",
+            "Value": "rockwood-walkthrough"
+          }
+        ]
+      }
+    },
+    "VercelRole": {
+      "Type": "AWS::IAM::Role",
+      "Properties": {
+        "AssumeRolePolicyDocument": {
+          "Fn::Sub": "{\"Version\":\"2012-10-17\",\"Statement\":[{\"Effect\":\"Allow\",\"Principal\":{\"Federated\":\"${VercelOidc}\"},\"Action\":\"sts:AssumeRoleWithWebIdentity\",\"Condition\":{\"StringEquals\":{\"oidc.vercel.com/${VercelTeam}:aud\":\"https://vercel.com/${VercelTeam}\",\"oidc.vercel.com/${VercelTeam}:sub\":\"owner:${VercelTeam}:project:${VercelProject}:environment:production\"}}}]}"
+        },
+        "Policies": [
+          {
+            "PolicyName": "RockwoodReportTranslation",
+            "PolicyDocument": {
+              "Version": "2012-10-17",
+              "Statement": [
+                {
+                  "Effect": "Allow",
+                  "Action": [
+                    "bedrock:InvokeModel"
+                  ],
+                  "Resource": [
+                    {
+                      "Fn::Sub": "arn:${AWS::Partition}:bedrock:us-east-1:${AWS::AccountId}:inference-profile/us.amazon.nova-2-lite-v1:0"
+                    },
+                    {
+                      "Fn::Sub": "arn:${AWS::Partition}:bedrock:us-east-1::foundation-model/amazon.nova-2-lite-v1:0"
+                    },
+                    {
+                      "Fn::Sub": "arn:${AWS::Partition}:bedrock:us-east-2::foundation-model/amazon.nova-2-lite-v1:0"
+                    },
+                    {
+                      "Fn::Sub": "arn:${AWS::Partition}:bedrock:us-west-2::foundation-model/amazon.nova-2-lite-v1:0"
+                    }
+                  ]
+                }
+              ]
+            }
+          }
+        ],
+        "Tags": [
+          {
+            "Key": "Project",
+            "Value": "rockwood-walkthrough"
+          }
+        ]
+      }
+    },
+    "TranscribeDataRole": {
+      "Type": "AWS::IAM::Role",
+      "Properties": {
+        "AssumeRolePolicyDocument": {
+          "Version": "2012-10-17",
+          "Statement": [
+            {
+              "Effect": "Allow",
+              "Principal": {
+                "Service": "transcribe.amazonaws.com"
+              },
+              "Action": "sts:AssumeRole",
+              "Condition": {
+                "StringEquals": {
+                  "aws:SourceAccount": {
+                    "Ref": "AWS::AccountId"
+                  }
+                },
+                "ArnLike": {
+                  "aws:SourceArn": {
+                    "Fn::Sub": "arn:${AWS::Partition}:transcribe:${AWS::Region}:${AWS::AccountId}:transcription-job/rockwood-*"
+                  }
+                }
+              }
+            }
+          ]
+        },
+        "Policies": [
+          {
+            "PolicyName": "RockwoodTranscriptionData",
+            "PolicyDocument": {
+              "Version": "2012-10-17",
+              "Statement": [
+                {
+                  "Effect": "Allow",
+                  "Action": "s3:GetObject",
+                  "Resource": {
+                    "Fn::Sub": "${StagingBucket.Arn}/jobs/*/audio-*"
+                  }
+                },
+                {
+                  "Effect": "Allow",
+                  "Action": "s3:PutObject",
+                  "Resource": {
+                    "Fn::Sub": "${StagingBucket.Arn}/jobs/*/transcript.json"
+                  }
+                },
+                {
+                  "Effect": "Allow",
+                  "Action": "s3:ListBucket",
+                  "Resource": {
+                    "Fn::GetAtt": [
+                      "StagingBucket",
+                      "Arn"
+                    ]
+                  },
+                  "Condition": {
+                    "StringLike": {
+                      "s3:prefix": [
+                        "jobs/*"
+                      ]
+                    }
+                  }
+                }
+              ]
+            }
+          }
+        ],
+        "Tags": [
+          {
+            "Key": "Project",
+            "Value": "rockwood-walkthrough"
+          }
+        ]
+      }
+    },
+    "WorkerInvokePolicy": {
+      "Type": "AWS::Lambda::EventInvokeConfig",
+      "Properties": {
+        "FunctionName": {
+          "Ref": "Worker"
+        },
+        "Qualifier": "$LATEST",
+        "MaximumEventAgeInSeconds": 60,
+        "MaximumRetryAttempts": 0
+      }
+    }
+  },
+  "Outputs": {
+    "StagingBucket": {
+      "Value": {
+        "Ref": "StagingBucket"
+      }
+    },
+    "WorkerFunction": {
+      "Value": {
+        "Ref": "Worker"
+      }
+    },
+    "ServerSecretArn": {
+      "Value": {
+        "Ref": "ServerSecret"
+      }
+    },
+    "VercelRoleArn": {
+      "Value": {
+        "Fn::GetAtt": [
+          "VercelRole",
+          "Arn"
+        ]
+      }
+    },
+    "TranscribeDataRoleArn": {
+      "Value": {
+        "Fn::GetAtt": [
+          "TranscribeDataRole",
+          "Arn"
+        ]
+      }
+    }
+  }
+}

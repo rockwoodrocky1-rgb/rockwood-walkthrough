@@ -19,6 +19,8 @@ export default function SessionReview({
   session,
   project,
   stage,
+  backgroundBusy = false,
+  onDirtyChange,
   liveAiEnabled,
   cloudEnabled = false,
   readOnly = false,
@@ -31,10 +33,12 @@ export default function SessionReview({
   session: Session;
   project: Project;
   stage: string;
+  backgroundBusy?: boolean;
+  onDirtyChange?: (dirty: boolean) => void;
   liveAiEnabled: boolean;
   cloudEnabled?: boolean;
   readOnly?: boolean;
-  update: (s: Session) => Promise<void>;
+  update: (s: Session) => Promise<Session | void>;
   process: (s: Session) => void;
   manual: (s: Session) => void;
   back: () => void;
@@ -56,13 +60,17 @@ export default function SessionReview({
     (transcriptDraft !== null &&
       transcriptDraft !== (session.transcript?.text ?? ""));
   useEffect(() => {
+    onDirtyChange?.(dirty);
+    return () => onDirtyChange?.(false);
+  }, [dirty, onDirtyChange]);
+  useEffect(() => {
     const warn = (e: BeforeUnloadEvent) => {
       if (dirty) e.preventDefault();
     };
     window.addEventListener("beforeunload", warn);
     return () => window.removeEventListener("beforeunload", warn);
   }, [dirty]);
-  const busy = !!stage || working !== null || readOnly;
+  const busy = !!stage || backgroundBusy || working !== null || readOnly;
   const active = session.photos.find((p) => p.id === selected);
   async function update(next: Session) {
     if (readOnly) throw new Error("This visit is view only.");
@@ -109,14 +117,14 @@ export default function SessionReview({
         },
       };
     }
-    await onUpdate(next);
-    return next;
+    return (await onUpdate(next)) ?? next;
   }
   async function persistText() {
     const changed = transcript !== (session.transcript?.text ?? "");
     const next = {
       ...session,
       notes,
+      recordingLanguage: session.recordingLanguage ?? (session.audio?.size ? session.language ?? "en" : undefined),
       language:
         session.language === "es" || language === "es"
           ? ("es" as const)
@@ -138,6 +146,7 @@ export default function SessionReview({
           }
         : session.transcript,
     };
+    if (!dirty && (session.language ?? "en") === next.language) return session;
     const saved = await update(next);
     setTranscript(null);
     return saved;
@@ -386,18 +395,19 @@ export default function SessionReview({
         <section className="report-choice review-actions">
           {liveAiEnabled && (
             <p>
-              {t("AI sends this visit to OpenAI. Review the report before sharing.")}
+              {t("Review the generated report before relying on it.")}
             </p>
           )}
+          {!liveAiEnabled && <p>{t("Automatic reports are not connected yet. Your visit is saved.")}</p>}
           <button
             className="button primary report-next"
             onClick={() => void run(liveAiEnabled ? process : manual)}
             disabled={busy}
           >
             <FileText size={24} aria-hidden />
-            {working === "report" || stage
+            {working === "report" || stage || backgroundBusy
               ? t("Preparing…")
-              : t("Create report")}
+              : liveAiEnabled ? t("Create report") : t("Write report")}
           </button>
           <details className="review-options">
             <summary>{t("More options")}</summary>

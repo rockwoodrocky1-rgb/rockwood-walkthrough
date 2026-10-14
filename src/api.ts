@@ -10,6 +10,8 @@ import {
 } from "../shared/model";
 import { dataUrl } from "./media";
 import { getSupabase } from "./supabase";
+import { processingStatusSchema } from "../shared/processing";
+import { z } from "zod";
 export function explainSavedProcessingError(message: string) {
   if (
     /^(fetch is aborted\.?|the operation was aborted\.?)$/i.test(message.trim())
@@ -22,6 +24,7 @@ export async function serverRequest(
   init: RequestInit,
   operation: string,
   timeoutMs = 115_000,
+  recovery: "browser" | "cloud" = "browser",
 ) {
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), timeoutMs);
@@ -41,33 +44,65 @@ export async function serverRequest(
       name === "AbortError"
     )
       throw new Error(
-        `${operation} was interrupted or took too long. Your walkthrough is still saved in this browser. Keep the page open and retry, or create a manual report.`,
+        recovery === "cloud"
+          ? "The connection was interrupted. Your visit is saved. Check report progress before retrying."
+          : `${operation} was interrupted or took too long. Your walkthrough is still saved in this browser. Keep the page open and retry, or create a manual report.`,
       );
     if (error instanceof TypeError)
       throw new Error(
-        `Could not reach the site to ${operation.charAt(0).toLowerCase() + operation.slice(1)}. Your walkthrough is still saved in this browser. Check your connection and retry, or create a manual report.`,
+        recovery === "cloud"
+          ? "Could not connect. Your visit is saved. Check report progress when your connection returns."
+          : `Could not reach the site to ${operation.charAt(0).toLowerCase() + operation.slice(1)}. Your walkthrough is still saved in this browser. Check your connection and retry, or create a manual report.`,
       );
     if (error instanceof SyntaxError)
       throw new Error(
-        "The site returned an unreadable response. Your walkthrough is still saved in this browser. Retry, or create a manual report.",
+        recovery === "cloud"
+          ? "Could not confirm report processing. Your visit is saved. Check report progress before retrying."
+          : "The site returned an unreadable response. Your walkthrough is still saved in this browser. Retry, or create a manual report.",
       );
     throw error;
   } finally {
     clearTimeout(timer);
   }
 }
-export async function getLiveConfig(): Promise<{ live: boolean }> {
+export async function getLiveConfig(): Promise<{ live: boolean; processing?: "background" | "request" }> {
   const data = await serverRequest(
     "/api/config",
     { cache: "no-store" },
     "Check AI availability",
     15_000,
   );
-  if (typeof data?.live !== "boolean")
+  const config = z.object({ live: z.boolean(), processing: z.enum(["background", "request"]).optional() }).safeParse(data);
+  if (!config.success)
     throw new Error(
       "Could not check AI availability. Your walkthrough is saved in this browser. Retry, or create a manual report.",
     );
-  return data;
+  return config.data;
+}
+async function processingHeaders() {
+  const supabase = getSupabase();
+  const session = supabase ? (await supabase.auth.getSession()).data.session : null;
+  if (!session) throw new Error("Sign in again to check report progress.");
+  return { Authorization: `Bearer ${session.access_token}` };
+}
+export async function queueProcessing(workspaceId: string, walkthroughId: string, retry = false) {
+  const headers = await processingHeaders();
+  const data = await serverRequest("/api/process", {
+    method: "POST",
+    body: JSON.stringify({workspaceId, walkthroughId, retry}),
+    headers: {...headers, "Content-Type": "application/json"},
+  }, "Queue report", 20_000, "cloud");
+  const result = z.object({id: z.uuid()}).safeParse(data);
+  if (!result.success) throw new Error("Could not confirm report processing. Your visit is saved. Check report progress before retrying.");
+  return result.data;
+}
+export async function getProcessing(workspaceId: string, walkthroughId: string) {
+  const headers = await processingHeaders();
+  const query = new URLSearchParams({workspace: workspaceId, visit: walkthroughId});
+  const data = await serverRequest(`/api/process?${query}`, {headers, cache: "no-store"}, "Check report progress", 20_000, "cloud");
+  const result = z.object({job: processingStatusSchema.nullable()}).safeParse(data);
+  if (!result.success) throw new Error("Could not check report progress. Your saved visit is safe.");
+  return result.data.job;
 }
 async function request(path: string, body: BodyInit, headers?: HeadersInit) {
   const requestHeaders = new Headers(headers);

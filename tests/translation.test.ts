@@ -1,4 +1,5 @@
-import { describe, expect, it, vi } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
+import { BedrockRuntimeClient } from "@aws-sdk/client-bedrock-runtime";
 import type OpenAI from "openai";
 import { participantSchema } from "../shared/participant";
 import {
@@ -12,6 +13,11 @@ import { cloudRowSchema, canEditSession } from "../src/cloud";
 import { translate } from "../src/i18n";
 import { shareToken, validShareToken } from "../server/report-share";
 import { POST } from "../app/api/translate-report/route";
+
+afterEach(() => {
+  vi.unstubAllEnvs();
+  vi.restoreAllMocks();
+});
 
 describe("Contact entry and bilingual reports", () => {
   it("accepts real-world contact formatting without treating it as verified identity", () => {
@@ -78,6 +84,41 @@ describe("Contact entry and bilingual reports", () => {
         { id: "invented", text: "Fabricated" },
       ]),
     ).toThrow("Incomplete");
+  });
+  it("translates through Bedrock without an OpenAI key and still enforces exact text-slot identity", async () => {
+    vi.stubEnv("AI_PROVIDER", "aws");
+    vi.stubEnv("VERCEL", "0");
+    vi.stubEnv("ROCKWOOD_AWS_REGION", "us-east-1");
+    vi.stubEnv("AWS_BEDROCK_MODEL_ID", "us.amazon.nova-2-lite-v1:0");
+    vi.stubEnv("OPENAI_API_KEY", undefined);
+    const report = structuredClone(createSample(projects[0]).report!);
+    report.summary = "No se ha terminado el sellado.";
+    const original = structuredClone(report);
+    const slots = reportTextSlots(report);
+    const values = slots.map((s) => ({
+      ...s,
+      text: s.id === "summary" ? "Caulking has not been completed." : s.text,
+    }));
+    const response = (translated: typeof values) => ({
+      $metadata: {},
+      stopReason: "tool_use" as const,
+      output: { message: { role: "assistant" as const, content: [{
+        toolUse: { toolUseId: "fixture", name: "english_report", input: { values: translated } },
+      }] } },
+      usage: { inputTokens: 5, outputTokens: 5, totalTokens: 10 },
+      metrics: { latencyMs: 1 },
+    });
+    const send = vi.spyOn(BedrockRuntimeClient.prototype, "send").mockResolvedValue(response(values) as never);
+    const result = await translateReportContent(report);
+    expect(result.summary).toBe("Caulking has not been completed.");
+    expect(result.observations).toEqual(report.observations);
+    expect(result.actionItems).toEqual(report.actionItems);
+    expect(report).toEqual(original);
+    const command = send.mock.calls[0][0] as { input: { system: { text: string }[]; messages: { content: { text: string }[] }[] } };
+    expect(command.input.system[0].text).toContain("untrusted data");
+    expect(JSON.parse(command.input.messages[0].content[0].text)).toEqual(slots);
+    send.mockResolvedValueOnce(response(values.slice(1)) as never);
+    await expect(translateReportContent(report)).rejects.toThrow("Incomplete English translation");
   });
   it("fails closed without translation configuration and never fabricates English", async () => {
     vi.stubEnv("LIVE_AI_ENABLED", "false");

@@ -5,8 +5,10 @@ import { createReportPdf } from "./report-pdf";
 import { HttpError } from "./api";
 import { sharedReportLink } from "./report-share";
 import nodemailer from "nodemailer";
+import { awsClientOptions } from "./aws-config";
+import { sendSesReport, SES_REPORT_RECIPIENT } from "./aws-ses";
 
-export const REPORT_RECIPIENT = "rockwoodrocky1@gmail.com";
+export const REPORT_RECIPIENT = SES_REPORT_RECIPIENT;
 export const deliveryColumns =
   "id,workspace_id,walkthrough_id,report_id,revision,status,pdf_path,last_error,created_at,sent_at";
 export function reportWorkerConfigured() {
@@ -17,13 +19,49 @@ export function reportWorkerConfigured() {
 }
 export function deliveryConfigured() {
   return (
-    process.env.REPORT_DELIVERY_ENABLED === "true" &&
-    ["SUPABASE_SECRET_KEY", "APP_URL"].every((k) => !!process.env[k]?.trim()) &&
-    (!!process.env.GMAIL_APP_PASSWORD?.trim() ||
-      (!!process.env.RESEND_API_KEY?.trim() &&
-        !!process.env.REPORT_EMAIL_FROM?.trim()))
+    reportWorkerConfigured() &&
+    emailActivationCutoff() !== false &&
+    providerConfigured(selectedProvider())
   );
 }
+function selectedProvider(): Envelope["provider"] {
+  if (process.env.REPORT_EMAIL_PROVIDER === "ses") return "ses";
+  return process.env.GMAIL_APP_PASSWORD?.trim() ? "gmail" : "resend";
+}
+function providerConfigured(provider: Envelope["provider"]) {
+  // Explicitly disabling email overrides legacy credentials and frozen envelopes.
+  if (process.env.REPORT_EMAIL_PROVIDER?.trim() === "disabled") return false;
+  if (provider === "gmail") return !!process.env.GMAIL_APP_PASSWORD?.trim();
+  if (provider === "resend")
+    return (
+      !!process.env.RESEND_API_KEY?.trim() &&
+      !!process.env.REPORT_EMAIL_FROM?.trim()
+    );
+  if (
+    process.env.REPORT_EMAIL_PROVIDER !== "ses" ||
+    !process.env.REPORT_EMAIL_FROM?.trim()
+  )
+    return false;
+  try {
+    return !!awsClientOptions().region;
+  } catch {
+    return false;
+  }
+}
+// A missing cutoff preserves existing installations. A malformed configured
+// cutoff fails closed so a typo cannot release the old report backlog.
+function emailActivationCutoff(): number | false | undefined {
+  const configured = process.env.REPORT_EMAIL_NOT_BEFORE?.trim();
+  if (!configured) return undefined;
+  if (!z.iso.datetime({ offset: true }).safeParse(configured).success) return false;
+  const timestamp = Date.parse(configured);
+  return Number.isFinite(timestamp) ? timestamp : false;
+}
+function hasUncertainSend(provider: Envelope["provider"]) {
+  return provider === "gmail" || provider === "ses";
+}
+const uncertainSendMessage =
+  "Email delivery confirmation needs review. Check the inbox before resending.";
 export function workerClient() {
   const url = process.env.NEXT_PUBLIC_SUPABASE_URL,
     key = process.env.SUPABASE_SECRET_KEY;
@@ -69,7 +107,7 @@ const envelopeSchema = z.object({
   subject: z.string(),
   text: z.string(),
   filename: z.string(),
-  provider: z.enum(["gmail", "resend"]),
+  provider: z.enum(["gmail", "resend", "ses"]),
 });
 type Envelope = z.infer<typeof envelopeSchema>;
 const jobSchema = z.object({
@@ -78,6 +116,7 @@ const jobSchema = z.object({
   walkthrough_id: z.string(),
   report_id: z.string(),
   revision: z.number(),
+  created_at: z.string().refine((value) => Number.isFinite(Date.parse(value))),
   snapshot: cloudRowSchema,
   project_name: z.string(),
   is_sample_project: z.boolean(),
@@ -211,15 +250,19 @@ export async function processDelivery(
     if (error || !data)
       throw new Error("Report delivery lease could not be saved.");
   }
-  let gmailSendStarted = false;
+  let nonIdempotentSendStarted = false;
   let phase = "read-report";
   try {
-    if (job.send_started_at && job.email_envelope?.provider === "gmail") {
-      // SMTP offers no provider-side idempotency. Never resend an uncertain send.
+    if (
+      job.send_started_at &&
+      job.email_envelope &&
+      hasUncertainSend(job.email_envelope.provider)
+    ) {
+      // Neither SMTP nor SES offers provider-side idempotency. A recovered
+      // lease must not replay a message whose acceptance is uncertain.
       await patch({
         status: "needs_attention",
-        last_error:
-          "Gmail delivery confirmation needs review. Check the inbox before resending.",
+        last_error: uncertainSendMessage,
         lease_token: null,
         lease_until: null,
       });
@@ -313,7 +356,8 @@ export async function processDelivery(
       phase = "save-pdf-status";
       await patch({ pdf_path: path });
     }
-    if (!deliveryConfigured()) {
+    const provider = job.email_envelope?.provider ?? selectedProvider();
+    if (!deliveryConfigured() || !providerConfigured(provider)) {
       await patch({
         status: "queued",
         next_attempt_at: new Date(Date.now() + 10 * 60_000).toISOString(),
@@ -324,7 +368,19 @@ export async function processDelivery(
       });
       return { configured: true, processed: false };
     }
-    const provider = process.env.GMAIL_APP_PASSWORD ? "gmail" : "resend";
+    const cutoff = emailActivationCutoff();
+    if (typeof cutoff === "number" && Date.parse(job.created_at) < cutoff) {
+      // Activation is prospective. Preserve earlier reports/PDFs without
+      // unexpectedly emailing private QA or user reports from the backlog.
+      await patch({
+        status: "needs_attention",
+        last_error:
+          "Report predates automatic email activation. Review before sending.",
+        lease_token: null,
+        lease_until: null,
+      });
+      return { configured: true, processed: false };
+    }
     const envelope =
       job.email_envelope ??
       emailEnvelope(
@@ -338,12 +394,12 @@ export async function processDelivery(
         provider,
       );
     // Freeze the exact request across retries, including URL, sender and PDF.
-    // Persist before calling Resend so a timeout is always treated as uncertain.
+    // Persist before any send so a timeout is always treated as uncertain.
     await patch({
       email_envelope: envelope,
       send_started_at: job.send_started_at ?? new Date().toISOString(),
     });
-    gmailSendStarted = envelope.provider === "gmail";
+    nonIdempotentSendStarted = hasUncertainSend(envelope.provider);
     phase = "submit-email";
     const providerId =
       envelope.provider === "gmail"
@@ -353,12 +409,14 @@ export async function processDelivery(
             job.id,
             process.env.GMAIL_APP_PASSWORD!,
           )
-        : await sendReportEmail(
-            envelope,
-            pdf,
-            job.id,
-            process.env.RESEND_API_KEY!,
-          );
+        : envelope.provider === "ses"
+          ? await sendSesReport(envelope, pdf, job.id, awsClientOptions())
+          : await sendReportEmail(
+              envelope,
+              pdf,
+              job.id,
+              process.env.RESEND_API_KEY!,
+            );
     await patch({
       status: "sent",
       provider_id: providerId,
@@ -376,9 +434,11 @@ export async function processDelivery(
     // Do not reflect provider details, private report content or keys in UI/logs.
     await patch({
       status:
-        gmailSendStarted || job.attempts >= 8 ? "needs_attention" : "queued",
-      last_error: gmailSendStarted
-        ? "Gmail delivery confirmation needs review. Check the inbox before resending."
+        nonIdempotentSendStarted || job.attempts >= 8
+          ? "needs_attention"
+          : "queued",
+      last_error: nonIdempotentSendStarted
+        ? uncertainSendMessage
         : job.attempts >= 8
           ? "Report delivery needs an administrator review."
           : "Delivery did not finish. It will retry automatically.",

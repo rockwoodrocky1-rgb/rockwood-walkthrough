@@ -168,7 +168,7 @@ for (const width of [320, 390]) {
       .getByLabel("Walkthrough notes", { exact: true })
       .fill("Confirm the bathroom finish.");
     await page
-      .getByRole("button", { name: "Create report", exact: true })
+      .getByRole("button", { name: "Write report", exact: true })
       .click();
     await expect(page.locator(".summary-text")).toHaveText(
       "Confirm the bathroom finish.",
@@ -272,7 +272,7 @@ test("an aborted AI check explains recovery and a retry keeps the capture", asyn
   await checkAi(page);
   await expect(aiError).toHaveCount(0);
   await expect(
-    page.getByRole("button", { name: "Create report", exact: true }),
+    page.getByRole("button", { name: "Write report", exact: true }),
   ).toBeEnabled();
   await page.reload();
   await expect(page.locator(".photo-thumb")).toHaveCount(1);
@@ -429,7 +429,7 @@ test("simulated media: audio-only recorder, independent photos, pause timeline, 
     page.getByRole("heading", { name: "Review visit" }),
   ).toBeVisible();
   await expect(
-    page.getByRole("button", { name: "Create report", exact: true }),
+    page.getByRole("button", { name: "Write report", exact: true }),
   ).toBeEnabled();
   await expect(page.locator(".review-options")).not.toHaveAttribute("open", "");
   await openDetails(page, ".review-options");
@@ -530,7 +530,7 @@ test("permission denial offers upload/manual fallback; photos, editing, associat
     .getByLabel("Optional note", { exact: true })
     .fill("Test upload, not site evidence.");
   await page.getByRole("button", { name: "Save photo details" }).click();
-  await page.getByRole("button", { name: "Create report" }).click();
+  await page.getByRole("button", { name: "Write report" }).click();
   await expect(page.locator(".report-disclosure")).toContainText(
     "Manually prepared",
   );
@@ -757,7 +757,7 @@ test("missing devices are reported with a working manual fallback", async ({
     .getByRole("button", { name: "Photos & notes", exact: true })
     .click();
   await expect(
-    page.getByRole("button", { name: "Create report" }),
+    page.getByRole("button", { name: "Write report" }),
   ).toBeEnabled();
 });
 test("plain HTTP capability fallback explains HTTPS and still allows typed notes", async ({
@@ -785,7 +785,7 @@ test("plain HTTP capability fallback explains HTTPS and still allows typed notes
   await page
     .getByLabel("Walkthrough notes", { exact: true })
     .fill("Manually documented site note.");
-  await page.getByRole("button", { name: "Create report" }).click();
+  await page.getByRole("button", { name: "Write report" }).click();
   await expect(page.locator(".summary-text")).toContainText(
     "Manually documented site note.",
   );

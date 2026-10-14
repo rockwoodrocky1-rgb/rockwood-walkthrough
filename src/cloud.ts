@@ -32,6 +32,7 @@ const fileSchema = z.object({
 const payloadSchema = z.object({
   participant: participantSchema.optional(),
   language: languageSchema.optional(),
+  recordingLanguage: languageSchema.optional(),
   duration: z.number().nonnegative(),
   status: z.enum(["saved", "interrupted"]),
   notes: z.string().max(8000),
@@ -235,6 +236,7 @@ export async function saveCloudSession(
   const payload = payloadSchema.parse({
     participant: session.participant,
     language: session.language,
+    recordingLanguage: session.recordingLanguage,
     duration: session.duration,
     status: session.status,
     notes: session.notes,

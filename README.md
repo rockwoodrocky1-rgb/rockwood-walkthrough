@@ -1,5 +1,7 @@
 # Rockwood Walkthrough
 
+> **AWS pilot foundation (October 14):** AWS Transcribe, Bedrock and SES adapters, a durable processing queue, background worker and infrastructure template are prepared. They are **not activated merely by deploying this code**. See [AWS_SETUP.md](AWS_SETUP.md) for the reviewed rollout and current state. The final sending domain/email is deferred; automatic email stays off. The client GitHub repository is public; recordings and reports remain private in Supabase.
+
 > **Name/phone and bilingual update:** the owner approved shared property history and publishing to `main`. The field-contact/shared-read migrations and anonymous browser sessions are enabled in the client test project. Read [BRANCH_NOTES.md](BRANCH_NOTES.md) for behavior and verification. AI translation and automatic email sending still need provider credentials; they are not activated by deployment.
 
 A client-owned shared site-visit prototype with an optional local demo mode: choose a fictional project, record narration while taking still photos, finish, then review an editable report. Built with Next.js App Router, TypeScript, Tailwind/CSS, Zod, the official OpenAI SDK, Supabase Auth/Postgres/private Storage, and temporary recovery storage via idb-keyval.
@@ -31,17 +33,17 @@ Both commands bind to loopback by default. `.npmrc` enables legacy peer resoluti
 
 The server includes only the Live-mode boolean in the initial page. With AI disabled, **Done saves and opens the review without any AI request**. In cloud mode it uploads to Supabase and clearly marks failed uploads for retry; in local demo mode Done makes no network requests. An explicit **Check AI availability** action can recheck the server later. Configured Live mode still processes after Done. Interrupted requests and timeouts explain what failed and how to retry; previously saved “Fetch is aborted” messages also receive a readable recovery explanation.
 
-To enable real processing, copy `.env.example` to `.env.local` and set:
+For the AWS pilot, follow [AWS_SETUP.md](AWS_SETUP.md); it uses the approved pilot account instead of requiring an OpenAI account. The older synchronous OpenAI adapter remains available as a separate option. To configure that option, copy `.env.example` to `.env.local` and set:
 
 ```dotenv
 OPENAI_API_KEY=your-server-side-key
 OPENAI_TRANSCRIBE_MODEL=whisper-1
 OPENAI_REPORT_MODEL=gpt-4.1-mini
 LIVE_AI_ENABLED=true
-ALLOWED_ORIGINS=http://localhost:8790,http://127.0.0.1:8790
+ALLOWED_ORIGINS=http://localhost:8791,http://127.0.0.1:8791
 ```
 
-Restart the server after changing environment variables. Never use a `NEXT_PUBLIC_` variable for an OpenAI key, Supabase secret/service-role key, database password, or other privileged credential. Supabase’s publishable key is intentionally public and is safe only with the supplied access policies. `/api/config` exposes only a boolean. `/api/transcribe` and `/api/report` are disabled unless both the explicit flag and key are present. Live AI is currently disabled. When Supabase is configured, both paid routes also verify the bearer token and require an owner/editor workspace membership. Before enabling paid AI publicly, configure a client-owned API key, quotas/rate limits, and the exact allowed origins. Unconfigured local-demo mode has only origin checks, which are not authentication.
+Restart the server after changing environment variables. Never use a `NEXT_PUBLIC_` variable for an OpenAI key, Supabase secret/service-role key, database password, or other privileged credential. Supabase’s publishable key is intentionally public and is safe only with the supplied access policies. `/api/config` exposes the enabled boolean and processing mode, never credentials. Live AI is currently disabled. Paid routes require explicit activation, provider configuration, allowed origins and a permitted workspace session. AWS queue requests additionally enforce visit ownership in the database. Unconfigured local-demo mode has only origin checks, which are not authentication.
 
 Whisper receives `verbose_json` and segment timestamp parameters. Other configured transcription models receive JSON only and return null timing; choose a model supporting that format. Reporting uses Responses with structured output, local Zod/evidence validation, `store: false`, a 90-second provider timeout, and no automatic paid retries. `store: false` does not itself promise zero provider retention. Live processing sends media and notes to OpenAI; use non-sensitive test material. See the [official transcription guide](https://developers.openai.com/api/docs/guides/speech-to-text) and [structured-output guide](https://developers.openai.com/api/docs/guides/structured-outputs).
 
@@ -60,7 +62,7 @@ An existing trusted HTTPS reverse proxy is equally suitable. Open Safari or Chro
 
 ### Public testing
 
-The hosted test URL is **https://rockwood-walkthrough.vercel.app/**. It runs on the client's Vercel account and does not require this Mac. Testers open it directly in Safari or Chrome and sign into the Rockwood workspace. Completed uploads are shared through the client’s Supabase project. Only verified, approved workspace members can read project data. Live AI is disabled, so use sample reports or prepare a manual report after recording.
+The hosted test URL is **https://rockwood-walkthrough.vercel.app/**. It runs on the client's Vercel account and does not require this Mac. Testers open it directly in Safari or Chrome and enter their name and phone number. These are unverified contact details; anyone with the app link can enter the shared Rockwood workspace. Completed uploads are stored in the client’s Supabase project. Live AI is disabled, so use sample reports or prepare a manual report after recording.
 
 The previous Cloudflare URL, `https://recordings-color-state-leader.trycloudflare.com/`, remains a separate temporary local-development preview. Only that old URL requires the Mac to stay awake and the app/tunnel to run. Older PDFs preserve the URL used when first generated; new hosted reports use the Vercel URL. The optional tunnel command is `./qa/preview-tools/cloudflared tunnel --url http://127.0.0.1:8790 --no-autoupdate --protocol http2`. Restarting it changes its URL. Its downloaded tool is excluded from source control. See the [Quick Tunnels reference](https://developers.cloudflare.com/tunnel/get-started/quick-tunnels/).
 

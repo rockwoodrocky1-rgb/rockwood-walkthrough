@@ -2,6 +2,12 @@ import OpenAI from "openai";
 import { translateReportContent } from "./translation";
 import { createClient } from "@supabase/supabase-js";
 import { zodTextFormat } from "openai/helpers/zod";
+import { bedrockPhotoContent, bedrockStructuredOutput } from "./aws-bedrock";
+import {
+  awsBedrockModel,
+  awsBedrockRuntime,
+  awsProcessingConfigured,
+} from "./aws-config";
 import {
   LIMITS,
   audioExtension,
@@ -10,6 +16,7 @@ import {
   validateEvidence,
   photoMetaSchema,
   type Transcript,
+  type ReportContent,
 } from "../shared/model";
 
 export class HttpError extends Error {
@@ -21,10 +28,11 @@ export class HttpError extends Error {
   }
 }
 export function liveEnabled() {
-  return (
-    process.env.LIVE_AI_ENABLED === "true" &&
-    !!process.env.OPENAI_API_KEY?.trim()
-  );
+  if (process.env.LIVE_AI_ENABLED !== "true") return false;
+  if (process.env.AI_PROVIDER === "aws") return awsProcessingConfigured();
+  if (process.env.AI_PROVIDER && process.env.AI_PROVIDER !== "openai")
+    return false;
+  return !!process.env.OPENAI_API_KEY?.trim();
 }
 function client() {
   return new OpenAI({
@@ -145,11 +153,17 @@ export function errorResponse(error: unknown) {
 }
 export async function transcribeAudio(
   audio: File,
-  api: OpenAI = client(),
+  api?: OpenAI,
 ): Promise<Transcript> {
+  if (!api && process.env.AI_PROVIDER === "aws")
+    throw new HttpError(
+      503,
+      "Save the visit and use background processing for this recording.",
+    );
+  const provider = api ?? client();
   const model = process.env.OPENAI_TRANSCRIBE_MODEL || "whisper-1";
   if (model === "whisper-1") {
-    const result = await api.audio.transcriptions.create({
+    const result = await provider.audio.transcriptions.create({
       file: audio,
       model,
       response_format: "verbose_json",
@@ -175,7 +189,7 @@ export async function transcribeAudio(
       ],
     };
   }
-  const result = await api.audio.transcriptions.create({
+  const result = await provider.audio.transcriptions.create({
     file: audio,
     model,
     response_format: "json",
@@ -197,7 +211,7 @@ Separate user-reported observations, conservative descriptions of apparent visib
 Group observations by known area or 'General / area unconfirmed'. Narration-only findings are valid. Use timing, area AND actual content to propose photo links; timestamp proximity alone NEVER proves association. Leave uncertain photo links empty and mark needsVerification. Reference stable IDs exactly. Each observation needs its actual source IDs; mixed basis requires at least two evidence kinds. noteIds may be 'session-note' or a photo ID with a nonempty note. reported_complete means USER REPORTED completion, not independently verified completion. Photo-only observations use information or requested_review, never reported_complete. Silence cannot become narration.
 Only assign assignee or dueDateText if explicitly stated; copy the exact supplied name/date wording, otherwise null. Priority stays unassigned unless explicitly given. suggestedTrade must be null unless explicitly requested or clearly labeled as a suggestion in the task text. Suggested actions must say 'Suggested follow-up:'. Open actions default to open; do not declare work done. Questions use category question. Keep description and task concise. Do not duplicate the full transcript in summary. Do not fill missing fields to look complete. Captions describe visible content without overclaiming.
 Acceptance example: 'The primary bathroom vanity is installed. The shower still needs caulking. Have the tile contractor review the niche alignment before handover.' means vanity reported_complete, shower caulking outstanding, niche alignment requested_review. No confirmed alignment defect, price, person or deadline can be inferred. The trade is not a named assignee. 'Before handover' may be copied as dueDateText, not turned into a date.`;
-export async function generateReport(raw: unknown, api: OpenAI = client()) {
+export async function generateReport(raw: unknown, api?: OpenAI) {
   const input = reportInputSchema.parse(raw);
   if (
     !input.transcript.text.trim() &&
@@ -224,37 +238,56 @@ export async function generateReport(raw: unknown, api: OpenAI = client()) {
       throw new HttpError(400, "Invalid or oversized JPEG derivative.");
   }
   const { photos, ...manifest } = input;
-  const content: OpenAI.Responses.ResponseInputContent[] = [
-    {
-      type: "input_text",
-      text: JSON.stringify({
-        ...manifest,
-        photos: photos.map((photo) => photoMetaSchema.parse(photo)),
-      }),
-    },
-  ];
-  for (const photo of photos)
-    content.push(
+  const manifestText = JSON.stringify({
+    ...manifest,
+    photos: photos.map((photo) => photoMetaSchema.parse(photo)),
+  });
+  let output: ReportContent;
+  if (!api && process.env.AI_PROVIDER === "aws") {
+    const runtime = awsBedrockRuntime();
+    try {
+      output = await bedrockStructuredOutput(
+        {
+          modelId: awsBedrockModel(),
+          instructions: REPORT_INSTRUCTIONS,
+          content: [{ text: manifestText }, ...photos.flatMap(bedrockPhotoContent)],
+          schema: reportContentSchema,
+          schemaName: "walkthrough_report",
+          maxOutputTokens: 9000,
+        },
+        runtime,
+      );
+    } finally {
+      runtime.destroy();
+    }
+  } else {
+    const content: OpenAI.Responses.ResponseInputContent[] = [
+      { type: "input_text", text: manifestText },
+    ];
+    for (const photo of photos)
+      content.push(
       {
         type: "input_text",
         text: `Photo ID: ${photo.id}; area: ${photo.area}.`,
       },
       { type: "input_image", image_url: photo.dataUrl, detail: "auto" },
-    );
-  const result = await api.responses.parse({
-    model: process.env.OPENAI_REPORT_MODEL || "gpt-4.1-mini",
-    store: false,
-    instructions: REPORT_INSTRUCTIONS,
-    input: [{ role: "user", content }],
-    text: { format: zodTextFormat(reportContentSchema, "walkthrough_report") },
-    max_output_tokens: 9000,
-  });
-  if (result.status !== "completed" || !result.output_parsed)
-    throw new HttpError(
-      422,
-      "The AI returned an incomplete report or declined the request. Nothing was replaced. Retry or create a manual report.",
-    );
-  const report = validateEvidence(result.output_parsed, input);
+      );
+    const result = await (api ?? client()).responses.parse({
+      model: process.env.OPENAI_REPORT_MODEL || "gpt-4.1-mini",
+      store: false,
+      instructions: REPORT_INSTRUCTIONS,
+      input: [{ role: "user", content }],
+      text: { format: zodTextFormat(reportContentSchema, "walkthrough_report") },
+      max_output_tokens: 9000,
+    });
+    if (result.status !== "completed" || !result.output_parsed)
+      throw new HttpError(
+        422,
+        "The AI returned an incomplete report or declined the request. Nothing was replaced. Retry or create a manual report.",
+      );
+    output = result.output_parsed;
+  }
+  const report = validateEvidence(output, input);
   const explicit = [
     input.transcript.text,
     input.notes,
@@ -272,6 +305,11 @@ export async function generateReport(raw: unknown, api: OpenAI = client()) {
 }
 export async function handleTranscribe(request: Request) {
   try {
+    if (process.env.AI_PROVIDER === "aws")
+      throw new HttpError(
+        503,
+        "Save the visit and use background processing for this recording.",
+      );
     await guard(request);
     const bytes = await readLimited(request);
     const form = await new Response(bytes, {

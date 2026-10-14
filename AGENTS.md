@@ -1,5 +1,7 @@
 # Rockwood Walkthrough
 
+AWS pilot integration instructions and activation status are in AWS_SETUP.md. The user confirmed the Puestario AWS pilot account and approved creating the Rockwood Gmail SES identity on October 14, 2026, but deferred the final domain/sender and automatic email. Do not activate email or drain historical deliveries. Infrastructure defaults to a disabled worker/schedule; apply the processing migration before setting AI_PROVIDER=aws. The repository is public. No secret values belong in the template or worker bundle. A compiled adapter, active model profile, or passing mock test is not a verified live transcription.
+
 This repository is the client-owned internal app for one development company and multiple construction projects. Keep the marketing website separate. Future Gantt/project management features extend the project model; they must not replace visit evidence or report IDs.
 
 Read README.md and .env.example before changing integrations. Never read or print secrets unnecessarily. Real secrets belong only in ignored .env.local or the client hosting secret store. Do not put secret/service-role keys in NEXT_PUBLIC_ variables, git, artifacts, screenshots or logs.

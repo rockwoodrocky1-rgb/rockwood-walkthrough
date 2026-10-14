@@ -130,6 +130,7 @@ export type Report = ReportContent & {
 export type Session = {
   participant?: Participant;
   language?: Language;
+  recordingLanguage?: Language;
   id: string;
   projectId: string;
   startedAt: string;
