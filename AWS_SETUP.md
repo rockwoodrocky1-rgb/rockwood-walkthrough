@@ -2,14 +2,15 @@
 
 ## Deployment state
 
-Updated October 14, 2026. The user approved AWS activation. **Backend deployment is in progress; the complete hosted workflow is not yet verified.**
+Updated October 14, 2026. **AWS processing is active on the hosted pilot, with email OFF.**
 
-- The durable processing migration is applied to the live Supabase TEST workspace. Transactional access tests passed and rolled back their test changes.
-- The `rockwood-pilot` stack is created. Its worker is **Active**, and the deployed bundle hash was verified against the exact artifact built from commit `5974ce2`.
-- The worker's Supabase connection is stored privately in the stack's Secrets Manager secret. It uses native Lambda role credentials.
-- Email remains disabled: `EmailEnabled=false` and `REPORT_EMAIL_PROVIDER=disabled`.
-- The AWS connection variables are saved in Vercel Production. `LIVE_AI_ENABLED=true` is saved; redeployment remains pending, so the hosted app has not yet been switched to AWS processing.
-- Synthetic English and Spanish recordings both completed transcription and English report generation with unchanged source media and valid evidence references. Private PDF inspection and hosted endpoint checks are being finalized. A real phone recording remains pending.
+- The processing migration and `20261014163813_prioritize_pending_report_pdfs.sql` are applied to the live Supabase TEST workspace; transactional access/queue tests passed with rollback.
+- The `rockwood-pilot` stack is deployed, the worker is Active, and its deployed bundle hash matches the artifact built from source commit `5974ce2`.
+- The worker's Supabase connection is private in Secrets Manager and uses native Lambda credentials.
+- Vercel Production has the AWS configuration and `LIVE_AI_ENABLED=true`. Deployment `9a50141` was verified Ready on the permanent app domain; `/api/config` reports `live:true, processing:background`.
+- English and Spanish synthetic M4A recordings completed original-language transcription and English draft reports. Both private two-page PDFs include their photo. Original media bytes and evidence references survived reload.
+- Email remains disabled: `EmailEnabled=false`, `REPORT_EMAIL_PROVIDER=disabled`, and the future activation cutoff are unchanged.
+- A real iPhone recording and noisy-site transcription/report quality still require field testing. AI reports remain drafts for review.
 
 Account IDs, role ARNs and deployment-specific connection details belong in ignored operator records, not this public document. The public template resolves its account dynamically.
 
@@ -24,7 +25,7 @@ An SES identity for `rockwoodrocky1@gmail.com` was created with the user's appro
 3. A scheduled Lambda claims one leased processing job each minute. It temporarily stages audio in private S3 and starts a deterministic Transcribe job using the selected English or Spanish recording language. That language is preserved separately from the interface toggle. Later ticks poll without holding a browser request open.
 4. Original-language speech is checkpointed before Bedrock builds and validates the English report. Photos and notes remain evidence, never instructions. Evidence IDs, unknown assignments, and uncertain findings retain the existing validation rules.
 5. A service-only completion RPC checks the original revision, preserves ownership/media, saves the transcript/report, and atomically queues the existing PDF delivery. Edits made during processing cause a visible conflict; generated work is retained instead of overwriting the edits.
-6. The existing leased delivery worker builds the branded private PDF. Email stays off until separately configured. The original audio/transcript and current report remain accessible under the project.
+6. The existing leased delivery worker prioritizes unrendered PDFs ahead of older email retries, while preserving retry dates and exclusive leases. It builds the branded private PDF. Email stays off until separately configured. The original audio/transcript and current report remain accessible under the project.
 
 The phone may close after upload and queue confirmation. Recording itself still needs the phone awake. Work does not depend on the Mac.
 
@@ -76,9 +77,13 @@ For future activation, set `SenderAddress`, `SenderIdentity`, `EmailEnabled=true
 
 ## Verification status
 
-CloudFormation validation passed in the pilot account. Local lint, TypeScript checks, the production build and 212 automated tests passed, including queue ownership, leases, retries, language preservation, output validation and disabled-email handling. GitHub Actions CI also passed.
+CloudFormation validation, lint, typecheck, the production build and 217 automated tests passed, including five PDF queue fairness regressions. GitHub Actions and the production deployment passed for `9a50141`. The live processing migration passed its transactional ownership, quota, lease, conflict and idempotent-completion checks with all fixtures rolled back. The PDF-priority migration also passed a live rollback-only check: new PDFs beat a backlog of 12 email-waiting jobs, while retry delays, active/expired leases, explicit targets, uncertain-send quarantine and service-only access remain intact.
 
-The deployed processing migration passed transactional access tests with rollback, and the active worker's deployed bundle hash matches the artifact from `5974ce2`. Synthetic English and Spanish recordings have produced English reports with preserved original speech language and unchanged source media, including a scheduled start under the narrowed S3 permissions. These results do not establish end-to-end readiness: Vercel redeployment and real English/Spanish phone recordings through the hosted app, including private PDF completion and recovery checks, are still pending. Saved Production variables alone do not change the running deployment. Automatic email has not been activated or verified.
+Two synthetic recordings (English and Spanish) ran through AWS Transcribe, Bedrock, saved reports and private PDFs without an open browser. Both retained original-language transcripts, unchanged audio/photo bytes, stable evidence IDs and unassigned people/dates. The PDFs have two pages and embedded photos, passed visual layout inspection, and reject public unauthenticated access. Email remained unsent. An initial scoped Transcribe permission failure was recovered using the same database jobs after correcting the policy; the Spanish provider job started through the schedule itself.
+
+On the permanent hosted origin, duplicate authenticated process POSTs returned the same completed IDs, status GETs returned completion, missing authentication returned 401, and a disallowed Origin returned 403. A separate synthetic translation through Vercel OIDC/Bedrock returned English text with unchanged evidence/assignment structure and a relative deadline preserved as “tomorrow.” A harness assertion initially rejected the valid translation “entrance” for “entrada”; the bounded diagnostic corrected that assertion and retained the response before validating it.
+
+These checks establish the connected processing/storage/PDF path. They do not prove iPhone microphone capture, mixed-language speech or noisy-site accuracy. Review the AI draft against its source evidence; the Spanish sample demonstrates that apparent access/clearance can still be overclassified as reported completion. Automatic email has not been activated or verified.
 
 ## References
 
