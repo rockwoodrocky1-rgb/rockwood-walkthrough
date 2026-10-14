@@ -30,6 +30,39 @@ type Services = {
 };
 const services: Services = { start: startAwsTranscription, poll: pollAwsTranscription, report: generateReport };
 const claimIdentitySchema = z.object({ id: z.uuid(), lease_token: z.uuid() });
+type ProcessingStage = "source_load" | "transcribe_start" | "transcribe_poll" | "report_generate" | "report_validate" | "checkpoint" | "finalize";
+const awsErrorNames = new Set([
+  "AccessDenied", "AccessDeniedException", "BadRequestException", "ConflictException",
+  "ExpiredToken", "ExpiredTokenException", "InternalFailureException", "InternalServerException",
+  "InvalidAccessKeyId", "InvalidClientTokenId", "InvalidSignatureException", "LimitExceededException",
+  "ModelErrorException", "ModelNotReadyException", "ModelTimeoutException", "NoSuchBucket", "NoSuchKey",
+  "RequestTimeout", "RequestTimeoutException", "ResourceNotFoundException", "ServiceQuotaExceededException",
+  "ServiceUnavailableException", "SignatureDoesNotMatch", "ThrottlingException", "TooManyRequestsException",
+  "UnrecognizedClientException", "ValidationException",
+]);
+const safeRequestId = /^(?:[a-f\d]{8}-(?:[a-f\d]{4}-){3}[a-f\d]{12}|[a-f\d]{16}|[a-f\d]{32}|[a-f\d]{64})$/i;
+function ownValue(value: unknown, key: string): unknown {
+  // Do not invoke provider-defined getters or stringify an error object.
+  try {
+    return value && typeof value === "object" ? Object.getOwnPropertyDescriptor(value, key)?.value : undefined;
+  } catch { return undefined; }
+}
+function logProcessingFailure(jobId: string, stage: ProcessingStage, error: unknown) {
+  const name = ownValue(error, "name");
+  const metadata = ownValue(error, "$metadata");
+  const status = ownValue(metadata, "httpStatusCode");
+  const requestId = ownValue(metadata, "requestId");
+  // Only fixed names, a validated job UUID, HTTP status, and a bounded AWS
+  // request identifier leave this worker. Never include messages or stacks.
+  console.warn(JSON.stringify({
+    event: "report_processing_failed",
+    job_id: jobId,
+    stage,
+    error_name: typeof name === "string" && awsErrorNames.has(name) ? name : "UnknownError",
+    ...(typeof status === "number" && Number.isInteger(status) && status >= 100 && status <= 599 ? { http_status: status } : {}),
+    ...(typeof requestId === "string" && safeRequestId.test(requestId) ? { aws_request_id: requestId } : {}),
+  }));
+}
 
 /** One bounded step per invocation. No sleeping while Transcribe is running. */
 export async function processReportJob(client: SupabaseClient, deps: Services = services) {
@@ -62,6 +95,7 @@ export async function processReportJob(client: SupabaseClient, deps: Services = 
   }
   const job = parsed.data;
   const row = job.snapshot;
+  let stage: ProcessingStage = "source_load";
   async function media(file: {path: string; size: number; type: string}, max: number) {
     if (!file.path.startsWith(`${job.workspace_id}/`) || file.path.includes("..") || file.size <= 0 || file.size > max)
       throw new Error("Saved media is invalid.");
@@ -80,10 +114,14 @@ export async function processReportJob(client: SupabaseClient, deps: Services = 
     let transcript: Transcript | undefined = job.transcript ?? row.payload.transcript;
     if (!transcript?.text.trim() && row.payload.audio?.size) {
       if (!job.transcribe_job_name) {
-        const started = await deps.start({jobId: job.id, generation: job.transcribe_generation, audio: await media(row.payload.audio, LIMITS.uploadBytes), language: row.payload.recordingLanguage ?? row.payload.language ?? "en"});
+        const audio = await media(row.payload.audio, LIMITS.uploadBytes);
+        stage = "transcribe_start";
+        const started = await deps.start({jobId: job.id, generation: job.transcribe_generation, audio, language: row.payload.recordingLanguage ?? row.payload.language ?? "en"});
+        stage = "checkpoint";
         await release({phase: "transcribing", transcribe_job_name: started.jobName, audio_key: started.audioKey, transcribe_failed: false, last_error: null});
         return {processed: true};
       }
+      stage = "transcribe_poll";
       const result = await deps.poll(job.transcribe_job_name);
       if (result.status === "pending") {
         await release({phase: "transcribing", poll_count: job.poll_count + 1, last_error: null});
@@ -101,6 +139,7 @@ export async function processReportJob(client: SupabaseClient, deps: Services = 
       if (transcript.source !== "audio")
         throw new Error("Transcription source is invalid.");
       // Persist speech before generating the report so a model failure cannot lose it.
+      stage = "checkpoint";
       await patch({transcript, phase: "reporting", last_error: null});
     }
     transcript ??= {text: "", source: "manual", segments: []};
@@ -114,6 +153,7 @@ export async function processReportJob(client: SupabaseClient, deps: Services = 
       await release({status: "failed", last_error: "No speech or notes were found. Add notes or photos before creating the report."});
       return {processed: true};
     }
+    stage = "source_load";
     const input = {
       language: row.payload.language ?? "en", sessionId: row.id,
       projectId: reportInputSchema.shape.projectId.parse(row.project_id),
@@ -126,24 +166,30 @@ export async function processReportJob(client: SupabaseClient, deps: Services = 
       })),
     };
     validateEvidence({summary: "validation", observations: [], actionItems: [], captions: []}, input);
-    const generated = job.report ?? await deps.report({
-      ...input,
-      photos: await Promise.all(row.payload.photos.map(async (p, index) => ({
+    let generated = job.report;
+    if (!generated) {
+      const photos = await Promise.all(row.payload.photos.map(async (p, index) => ({
         ...input.photos[index],
         dataUrl: `data:image/jpeg;base64,${Buffer.from(await (await media(p.model, LIMITS.imageTargetBytes)).arrayBuffer()).toString("base64")}`,
-      }))),
-    });
+      })));
+      stage = "report_generate";
+      generated = await deps.report({ ...input, photos });
+    }
+    stage = "report_validate";
     const report = validateEvidence(reportContentSchema.parse(generated), input);
     // Checkpoint before completion; retries after a DB timeout reuse the AI output.
+    stage = "checkpoint";
     await patch({transcript, report, phase: "reporting", last_error: null});
+    stage = "finalize";
     const completed = await client.rpc("complete_report_processing", {
       job_id: job.id, worker_lease: job.lease_token, transcript_value: transcript, report_value: report,
     });
     if (completed.error || !["completed", "conflict", "cancelled"].includes(completed.data))
       throw new Error("Could not save the generated report.");
     return {processed: true};
-  } catch {
-    // Only a sanitized message enters member-readable state. No media/provider details in logs.
+  } catch (error) {
+    logProcessingFailure(job.id, stage, error);
+    // Members receive only the fixed recovery message, never operational details.
     await release({
       status: job.failure_count >= 2 ? "failed" : "queued",
       failure_count: job.failure_count + 1,

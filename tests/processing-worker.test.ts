@@ -1,4 +1,4 @@
-import { describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { processReportJob } from "../server/processing-worker";
 
@@ -108,8 +108,83 @@ function services() {
     report: vi.fn().mockResolvedValue(report),
   };
 }
+beforeEach(() => { vi.spyOn(console, "warn").mockImplementation(() => {}); });
+afterEach(() => { vi.restoreAllMocks(); });
 
 describe("Durable report worker (mocked storage and providers)", () => {
+  it("logs only allowlisted operational fields when transcription start fails", async () => {
+    const db = store();
+    const deps = services();
+    const privateDetail = "PRIVATE transcript photo audio auth-token https://private.example/report?token=secret";
+    deps.start.mockRejectedValueOnce(Object.assign(new Error(privateDetail), {
+      name: "AccessDeniedException", stack: privateDetail,
+      cause: { authorization: privateDetail }, request: { url: privateDetail },
+      $metadata: { httpStatusCode: 403, requestId: "aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee", extendedRequestId: privateDetail, attempts: 1 },
+      providerPayload: { transcript: privateDetail, audio: privateDetail },
+    }));
+    await processReportJob(db.client, deps);
+    expect(console.warn).toHaveBeenCalledExactlyOnceWith(JSON.stringify({
+      event: "report_processing_failed", job_id: jobId, stage: "transcribe_start",
+      error_name: "AccessDeniedException", http_status: 403,
+      aws_request_id: "aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee",
+    }));
+    const logged = JSON.stringify(vi.mocked(console.warn).mock.calls);
+    expect(logged).not.toContain("PRIVATE");
+    expect(logged).not.toContain("https://");
+    expect(logged).not.toContain(transcript.text);
+    expect(logged).not.toContain(audio.path);
+    expect(JSON.stringify(db.patches)).not.toContain("AccessDeniedException");
+    expect(db.state).toMatchObject({status: "queued", failure_count: 1});
+  });
+
+  it("replaces unrecognized error names and unsafe metadata rather than leaking them", async () => {
+    const db = store();
+    const deps = services();
+    deps.start.mockRejectedValueOnce({
+      name: "PRIVATE MEDIA NAME", message: "PRIVATE NOTES", stack: "PRIVATE STACK",
+      $metadata: { httpStatusCode: "403 PRIVATE", requestId: "https://private.example/?token=PRIVATE", extendedRequestId: "PRIVATE" },
+    });
+    await processReportJob(db.client, deps);
+    expect(console.warn).toHaveBeenCalledExactlyOnceWith(JSON.stringify({
+      event: "report_processing_failed", job_id: jobId, stage: "transcribe_start", error_name: "UnknownError",
+    }));
+    expect(JSON.stringify(vi.mocked(console.warn).mock.calls)).not.toContain("PRIVATE");
+  });
+
+  it("does not invoke error accessors or serialize provider objects while logging", async () => {
+    const db = store();
+    const deps = services();
+    const readPrivate = vi.fn(() => { throw new Error("PRIVATE GETTER"); });
+    const error = Object.defineProperties({}, {
+      name: {get: readPrivate}, $metadata: {get: readPrivate},
+      message: {get: readPrivate}, stack: {get: readPrivate}, toJSON: {get: readPrivate},
+    });
+    deps.start.mockRejectedValueOnce(error);
+    await expect(processReportJob(db.client, deps)).resolves.toEqual({processed: true});
+    expect(readPrivate).not.toHaveBeenCalled();
+    expect(console.warn).toHaveBeenCalledExactlyOnceWith(JSON.stringify({
+      event: "report_processing_failed", job_id: jobId, stage: "transcribe_start", error_name: "UnknownError",
+    }));
+  });
+
+  it.each(["source_load", "transcribe_poll", "report_generate", "finalize"])("identifies the %s failure stage without exposing input", async (stage) => {
+    const db = store();
+    const deps = services();
+    const failure = new Error("PRIVATE FAILURE");
+    if (stage === "source_load") db.download.mockRejectedValueOnce(failure);
+    if (stage === "transcribe_poll") {
+      db.state.transcribe_job_name = "existing-transcribe-job";
+      deps.poll.mockRejectedValueOnce(failure);
+    }
+    if (stage === "report_generate" || stage === "finalize") db.state.transcript = transcript;
+    if (stage === "report_generate") deps.report.mockRejectedValueOnce(failure);
+    if (stage === "finalize") db.behavior.completionError = true;
+    await processReportJob(db.client, deps);
+    expect(console.warn).toHaveBeenCalledExactlyOnceWith(JSON.stringify({
+      event: "report_processing_failed", job_id: jobId, stage, error_name: "UnknownError",
+    }));
+  });
+
   it("does no provider work when no job is claimed", async () => {
     const db = store();
     db.behavior.noClaim = true;
