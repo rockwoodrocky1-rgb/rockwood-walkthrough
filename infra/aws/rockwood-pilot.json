@@ -622,7 +622,7 @@
                 },
                 "ArnLike": {
                   "aws:SourceArn": {
-                    "Fn::Sub": "arn:${AWS::Partition}:transcribe:${AWS::Region}:${AWS::AccountId}:transcription-job/rockwood-*"
+                    "Fn::Sub": "arn:${AWS::Partition}:transcribe:${AWS::Region}:${AWS::AccountId}:*"
                   }
                 }
               }
@@ -645,9 +645,14 @@
                 {
                   "Effect": "Allow",
                   "Action": "s3:PutObject",
-                  "Resource": {
-                    "Fn::Sub": "${StagingBucket.Arn}/jobs/*/transcript.json"
-                  }
+                  "Resource": [
+                    {
+                      "Fn::Sub": "${StagingBucket.Arn}/jobs/*/transcript.json"
+                    },
+                    {
+                      "Fn::Sub": "${StagingBucket.Arn}/jobs/*/.write_access_check_file.temp"
+                    }
+                  ]
                 },
                 {
                   "Effect": "Allow",
@@ -657,13 +662,6 @@
                       "StagingBucket",
                       "Arn"
                     ]
-                  },
-                  "Condition": {
-                    "StringLike": {
-                      "s3:prefix": [
-                        "jobs/*"
-                      ]
-                    }
                   }
                 }
               ]
