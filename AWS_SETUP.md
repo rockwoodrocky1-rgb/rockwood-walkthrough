@@ -31,7 +31,7 @@ The phone may close after upload and queue confirmation. Recording itself still 
 
 ## Deployment sequence
 
-Deploy only in the approved pilot AWS account and the client's existing Supabase/Vercel projects. The template is intended for **us-east-1**. Confirm Vercel uses the **team OIDC issuer** `https://oidc.vercel.com/rockwood1`; the role trusts only `rockwood1/rockwood-walkthrough` Production.
+Deploy only in the approved pilot AWS account and the client's existing Supabase/Vercel projects. The template is intended for **us-east-1**. Confirm Vercel uses the **team OIDC issuer** `https://oidc.vercel.com/rockwood1`; the role trusts only `rockwood1/rockwood-walkthrough` Production and, after the October 15 workspace connection, `rockwood1/rockwood-projects` Production.
 
 This is the deployment runbook. Steps 1–5 are complete for the current pilot; do not recreate the stack or replay the applied migration. The AWS connection variables in step 6 are saved in Vercel Production, but live activation and redeployment are pending. Backend checks in step 7 are underway, and the real hosted recording tests remain outstanding.
 
@@ -95,4 +95,8 @@ These checks establish the connected processing/storage/PDF path. They do not pr
 
 ## Projects connection
 
-The worker now optionally drains Projects through the three `WORKSPACE_*` values documented in README. Its legacy connection and schedule remain in place. Use `npm run build:aws-worker` to create the bundle, deploy to the existing function, and add the Projects server credential only to its current Secrets Manager secret. Missing optional values keep the legacy-only behavior. Workspace delivery forces email off, uses authenticated `/cam` links, and keeps source/output in the Projects private buckets. Extend the Vercel OIDC role to the exact Projects Production subject for translation; do not replace the legacy subject. No live activation is claimed for this release until the connection and deployment are verified.
+On October 15, 2026, the user approved connecting Projects to the existing worker and adding its exact Production subject to the Vercel OIDC role. Both access changes are saved. The deployed worker bundle from `d7e4450` was verified by its SHA-256 hash, and Lambda's configuration was refreshed after saving the secret so warm runtimes cannot retain the legacy-only connection. Projects Production has the AWS processing settings enabled and was redeployed successfully. The existing schedule and legacy connection remain in place; workspace email is forced off. No workspace field-test recording was created, so configuration/deployment verification does not establish end-to-end recording acceptance.
+
+The worker drains Projects through the three `WORKSPACE_*` values documented in README. For future changes, build with `npm run build:aws-worker`, add the Projects server credential only to the current Secrets Manager secret, then deploy the bundle or refresh Lambda configuration. Connections are cached for the life of the process. Missing optional values keep legacy-only behavior. Workspace delivery uses authenticated `/cam` links and keeps source/output in the Projects private buckets. The Vercel trust policy retains the legacy Production subject and adds only the Projects Production subject; its permissions still invoke the selected Bedrock model only.
+
+The template records both subjects through `VercelProject` and `VercelWorkspaceProject`. Do not redeploy the entire template blindly to an active stack: preserve live parameters, the server secret, the actual worker artifact, and disabled email. Apply narrow configuration changes when updating this existing deployment.

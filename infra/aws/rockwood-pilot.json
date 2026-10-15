@@ -66,6 +66,11 @@
         "true"
       ],
       "Description": "Optional reservation of one worker execution. Enable only when the regional concurrency quota and existing reservations leave at least 100 unreserved executions (quota at least 101)."
+    },
+    "VercelWorkspaceProject": {
+      "Type": "String",
+      "Default": "rockwood-projects",
+      "AllowedPattern": "[a-z0-9-]+"
     }
   },
   "Conditions": {
@@ -562,7 +567,7 @@
       "Type": "AWS::IAM::Role",
       "Properties": {
         "AssumeRolePolicyDocument": {
-          "Fn::Sub": "{\"Version\":\"2012-10-17\",\"Statement\":[{\"Effect\":\"Allow\",\"Principal\":{\"Federated\":\"${VercelOidc}\"},\"Action\":\"sts:AssumeRoleWithWebIdentity\",\"Condition\":{\"StringEquals\":{\"oidc.vercel.com/${VercelTeam}:aud\":\"https://vercel.com/${VercelTeam}\",\"oidc.vercel.com/${VercelTeam}:sub\":\"owner:${VercelTeam}:project:${VercelProject}:environment:production\"}}}]}"
+          "Fn::Sub": "{\"Version\":\"2012-10-17\",\"Statement\":[{\"Effect\":\"Allow\",\"Principal\":{\"Federated\":\"${VercelOidc}\"},\"Action\":\"sts:AssumeRoleWithWebIdentity\",\"Condition\":{\"StringEquals\":{\"oidc.vercel.com/${VercelTeam}:aud\":\"https://vercel.com/${VercelTeam}\",\"oidc.vercel.com/${VercelTeam}:sub\":[\"owner:${VercelTeam}:project:${VercelProject}:environment:production\",\"owner:${VercelTeam}:project:${VercelWorkspaceProject}:environment:production\"]}}}]}"
         },
         "Policies": [
           {
