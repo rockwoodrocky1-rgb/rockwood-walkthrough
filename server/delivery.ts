@@ -62,9 +62,9 @@ function hasUncertainSend(provider: Envelope["provider"]) {
 }
 const uncertainSendMessage =
   "Email delivery confirmation needs review. Check the inbox before resending.";
-export function workerClient() {
-  const url = process.env.NEXT_PUBLIC_SUPABASE_URL,
-    key = process.env.SUPABASE_SECRET_KEY;
+export function workerClient(connection?: { url: string; key: string }) {
+  const url = connection?.url ?? process.env.NEXT_PUBLIC_SUPABASE_URL,
+    key = connection?.key ?? process.env.SUPABASE_SECRET_KEY;
   if (!url || !key)
     throw new HttpError(
       503,
@@ -130,6 +130,7 @@ export function reportLink(
   appUrl: string,
   projectId: string,
   sessionId: string,
+  workspaceId?: string,
 ) {
   const url = new URL(appUrl);
   if (
@@ -139,9 +140,12 @@ export function reportLink(
     throw new Error("APP_URL requires HTTPS.");
   if (url.username || url.password || url.search || url.hash)
     throw new Error("APP_URL must be a plain site origin.");
-  url.pathname = "/";
+  // The integrated recorder lives at /cam; legacy links use the site root.
+  if (url.pathname !== "/cam" && url.pathname !== "/")
+    throw new Error("Unsupported Cam report path.");
   url.searchParams.set("report", sessionId);
   url.searchParams.set("project", projectId);
+  if (workspaceId) url.searchParams.set("workspace", workspaceId);
   return url.toString();
 }
 export function emailEnvelope(
@@ -228,6 +232,7 @@ export async function sendGmailReport(
 export async function processDelivery(
   jobId?: string,
   injectedClient?: SupabaseClient,
+  destination?: { appUrl: string; authenticatedLinks: true; emailEnabled: false },
 ) {
   if (!reportWorkerConfigured()) return { configured: false, processed: false };
   const client = injectedClient ?? workerClient();
@@ -327,11 +332,9 @@ export async function processDelivery(
         row,
         projectName: job.project_name,
         isSampleProject: job.is_sample_project,
-        reportUrl: sharedReportLink(
-          process.env.APP_URL!,
-          row.workspace_id,
-          row.id,
-        ),
+        reportUrl: destination
+          ? reportLink(destination.appUrl, row.project_id, row.id, row.workspace_id)
+          : sharedReportLink(process.env.APP_URL!, row.workspace_id, row.id),
         photos,
       });
       if (pdf.length > 10_000_000)
@@ -357,7 +360,7 @@ export async function processDelivery(
       await patch({ pdf_path: path });
     }
     const provider = job.email_envelope?.provider ?? selectedProvider();
-    if (!deliveryConfigured() || !providerConfigured(provider)) {
+    if (destination?.emailEnabled === false || !deliveryConfigured() || !providerConfigured(provider)) {
       await patch({
         status: "queued",
         next_attempt_at: new Date(Date.now() + 10 * 60_000).toISOString(),

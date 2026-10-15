@@ -175,3 +175,11 @@ The test deployment and Supabase connection are configured. Future deployments m
 For production later, resolve hosting-plan eligibility, configure the email sender and recurring worker, verify actual email delivery and teammate onboarding, then review usage limits. Do not claim production readiness while these steps remain pending.
 
 The existing SQL-editor migrations are not yet registered in Supabase CLI migration history. Reconcile that history before enabling automatic database deployment; do not replay the baseline. Future scheduling/Gantt data should be separate tables with workspace and project foreign keys, explicit RLS and migrations. Keep the visit IDs and report IDs stable so project management tasks can cite original evidence.
+
+## Workspace integration release
+
+The companion Rockwood Projects release hosts Cam at `/cam` with canonical property IDs and the existing workspace login. This repository retains the legacy app/data and shared AWS worker. The worker accepts UUID properties and an optional separate Projects connection in its existing Secrets Manager JSON: `WORKSPACE_SUPABASE_URL`, `WORKSPACE_SUPABASE_SECRET_KEY`, `WORKSPACE_CAM_URL`. Retain the original `SUPABASE_SECRET_KEY`. Do not put either worker key in the browser or Projects web runtime.
+
+Each database is attempted independently. Workspace PDF links require workspace authentication and email is forced off for that destination. New evidence is recorded in the Projects database; existing legacy visits remain here without inferred property mappings. Deployment of this code alone does not install the companion schema or connect its worker.
+
+After deploying Projects and its two Cam migrations, set old Cam Production `WORKSPACE_CAM_ENABLED=true` and deploy this release. Root visits then open `https://rockwood-projects.vercel.app/cam`. `/legacy`, `?legacy=1`, and existing report links retain the original database. Keep the flag false until that destination is ready. Rollback disables this redirect without deleting either database. Production activation and phone acceptance are not verified by local tests.

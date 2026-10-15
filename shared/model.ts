@@ -157,7 +157,8 @@ export type Session = {
 export const reportInputSchema = z.object({
   language: z.enum(["en", "es"]).default("en"),
   sessionId: id,
-  projectId: z.enum(["coral-gables", "doral-office", "pinecrest"]),
+  // Legacy fixtures and canonical workspace property UUIDs share the worker.
+  projectId: z.union([z.uuid(), z.enum(["coral-gables", "doral-office", "pinecrest"])]),
   notes: z.string().max(8000),
   transcript: transcriptSchema,
   photos: z
