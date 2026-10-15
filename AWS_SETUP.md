@@ -92,3 +92,7 @@ These checks establish the connected processing/storage/PDF path. They do not pr
 - [Amazon Transcribe IAM policy examples](https://docs.aws.amazon.com/transcribe/latest/dg/security_iam_id-based-policy-examples.html)
 - [Nova 2 Lite model card](https://docs.aws.amazon.com/bedrock/latest/userguide/model-card-amazon-nova-2-lite.html)
 - [SES identity verification](https://docs.aws.amazon.com/ses/latest/dg/creating-identities.html)
+
+## Projects connection
+
+The worker now optionally drains Projects through the three `WORKSPACE_*` values documented in README. Its legacy connection and schedule remain in place. Use `npm run build:aws-worker` to create the bundle, deploy to the existing function, and add the Projects server credential only to its current Secrets Manager secret. Missing optional values keep the legacy-only behavior. Workspace delivery forces email off, uses authenticated `/cam` links, and keeps source/output in the Projects private buckets. Extend the Vercel OIDC role to the exact Projects Production subject for translation; do not replace the legacy subject. No live activation is claimed for this release until the connection and deployment are verified.
